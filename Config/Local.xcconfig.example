@@ -1,0 +1,8 @@
+// Copy to Config/Local.xcconfig and fill in. Your team ID is in the Apple Developer account
+// (Membership details) or in Xcode → Settings → Accounts.
+
+DEVELOPMENT_TEAM = ABCDE12345
+BUNDLE_ID_PREFIX = com.yourname
+
+// YES needs a paid membership and your Apple Account in Xcode; NO builds without the iPhone sync.
+CLAWD_ICLOUD = NO

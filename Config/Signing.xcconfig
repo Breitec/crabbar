@@ -1,0 +1,18 @@
+// Signing and identifiers for all targets. Put your own values into Config/Local.xcconfig
+// (copy Local.xcconfig.example); that file is not committed.
+
+DEVELOPMENT_TEAM =
+BUNDLE_ID_PREFIX = com.example
+// YES: the Mac app uploads the snapshot to iCloud for the iPhone. Needs a paid Apple Developer Program
+// membership and your Apple Account in Xcode → Settings → Accounts (for the provisioning profile).
+CLAWD_ICLOUD = NO
+
+#include? "Local.xcconfig"
+
+// Derived identifiers: App Group (macOS team-prefixed, iOS "group."), iCloud container, URL type name.
+CLAWD_APP_GROUP_MAC = $(DEVELOPMENT_TEAM).$(BUNDLE_ID_PREFIX).crabbar
+CLAWD_APP_GROUP_IOS = group.$(BUNDLE_ID_PREFIX).crabbar
+CLAWD_ICLOUD_CONTAINER = iCloud.$(BUNDLE_ID_PREFIX).crabbar
+CLAWD_MAC_ENTITLEMENTS_YES = CrabBar/CrabBar.entitlements
+CLAWD_MAC_ENTITLEMENTS_NO = CrabBar/CrabBar-NoCloud.entitlements
+CLAWD_MAC_ENTITLEMENTS = $(CLAWD_MAC_ENTITLEMENTS_$(CLAWD_ICLOUD))
