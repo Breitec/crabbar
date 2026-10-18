@@ -277,6 +277,10 @@ xcodebuild -project CrabBar.xcodeproj -scheme CrabBariOS -destination 'platform=
 
 The first build registers the iCloud container, and for a few minutes after that CloudKit may answer "Bad Container". Settings → Data → iPhone then shows "iCloud: …" in orange. CloudKit usually sends a retry hint with this error; the app then tries again after about a minute, so the first upload goes through a few minutes later. Without a hint it waits 30 minutes; quit and restart CrabBar to try sooner. Once an upload works, the log says `icloud: snapshot uploaded`.
 
+### "Invalid bundle ID for container" on the iPhone
+
+The first build for your iPhone creates the app IDs of the iPhone app and its widget and links them to the iCloud container. For a few minutes after that, CloudKit may not know the link yet, and the iPhone app shows "iCloud: … Invalid bundle ID for container" in orange. Wait a few minutes, then pull down in the app to fetch again. If it still appears after about 15 minutes, check on developer.apple.com under Certificates, Identifiers & Profiles → Identifiers that `<BUNDLE_ID_PREFIX>.CrabBariOS` and `<BUNDLE_ID_PREFIX>.CrabBariOS.Widget` have iCloud with the container `iCloud.<BUNDLE_ID_PREFIX>.crabbar` checked.
+
 ### The iPhone shows no data or old data
 
 - On the Mac, Settings → Data → iPhone should show "Last sent to iCloud at …". "This build has no iCloud entitlement." means the Mac app was built with `CLAWD_ICLOUD = NO`. An error shows up as "iCloud: …" in orange.
