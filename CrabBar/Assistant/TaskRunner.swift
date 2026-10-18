@@ -202,18 +202,23 @@ final class TaskRunner {
     } else {
       head.append("last run: never - this is the first one")
     }
+    if !t.tools.isEmpty { head.append("tools you may use besides reading: \(t.tools.joined(separator: " "))") }
     if let r = prev?.report, !r.isEmpty { head.append("your last report to the user:\n\(r)") }
     head.append("</task>")
-    let text = model.chat.context(forTask: true) + "\n\n" + head.joined(separator: "\n") + "\n\n" + t.prompt
+    // Only the time and the task's own head and last report: the chat's context holds what replies, the phone and
+    // other tasks wrote without a click, and that must not steer a run with tools.
+    let ctx = "<context>\nnow: \(Format.contextNow())\n</context>"
+    let text = ctx + "\n\n" + head.joined(separator: "\n") + "\n\n" + t.prompt
     let m = override ?? (t.model.isEmpty ? model.config.quickModel : t.model)
-    let args = ["-p", "--output-format", "json", "--model", m, "--permission-mode", "default", "--no-session-persistence",
-                "--disallowedTools", "Write", "Edit", "NotebookEdit", "--append-system-prompt-file", Prompts.tasks.path,
-                "--allowedTools"] + Prompts.readOnlyRules + t.tools
+    let args = ["-p", "--output-format", "json", "--model", m, "--permission-mode", "default", "--no-session-persistence"]
+      + Prompts.ownSettings + Prompts.mcpFlags(t.tools)
+      + ["--disallowedTools", "Write", "Edit", "NotebookEdit", "--append-system-prompt-file", Prompts.tasks.path,
+         "--allowedTools"] + Prompts.readOnlyRules + t.tools
     running = t.name
     let timeout = model.config.chatTimeoutSeconds
     Task {
       do {
-        let p = try Proc.spawn(bin.path, args, cwd: model.home.url.path, stdin: text.data(using: .utf8))
+        let p = try Proc.spawn(bin.path, args, cwd: model.home.url.path, stdin: text.data(using: .utf8), env: Prompts.ownEnv)
         proc = p
         let o = await p.wait(timeout: timeout)
         proc = nil

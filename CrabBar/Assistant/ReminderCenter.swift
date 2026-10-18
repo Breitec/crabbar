@@ -71,7 +71,7 @@ final class ReminderCenter {
       "Reply with exactly one line: the time as yyyy-MM-ddTHH:mm, or NONE."
     ].joined(separator: "\n")
     let o = await Proc.run(bin.path, ["-p", "--output-format", "text", "--model", model.config.quickModel,
-                                      "--tools", "", "--strict-mcp-config", "--no-session-persistence"],
+                                      "--tools", "", "--strict-mcp-config", "--no-session-persistence"] + Prompts.ownSettings,
                            cwd: NSTemporaryDirectory(), stdin: prompt.data(using: .utf8), timeout: 60)
     guard let r = o.text.range(of: #"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}"#, options: .regularExpression),
           let at = Format.parseISO(String(o.text[r])), at > Date().addingTimeInterval(-60) else { return nil }

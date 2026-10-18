@@ -136,11 +136,10 @@ final class ChatController {
 
   // MARK: - context
 
-  /// `forTask` - for a task's run: Auto is for the chat only, a task's run block always waits for the click.
-  func context(forTask: Bool = false) -> String {
+  /// The chat's context only: a task's run gets the time and its own last report (TaskRunner.start).
+  func context() -> String {
     guard let model else { return "" }
-    let auto = forTask ? "off for tasks - a run block waits for the user's click"
-      : model.config.chatAutoRun ? "on - your run scripts start at once, without the user's click" : "off"
+    let auto = model.config.chatAutoRun ? "on - your run scripts start at once, without the user's click" : "off"
     var lines = ["<context>", "now: \(Format.contextNow())", "auto-run: " + auto]
     let tips = model.advisor.tips
     if tips.isEmpty { lines.append("tips: none") } else {
@@ -241,7 +240,7 @@ final class ChatController {
       ctx = ctx.replacingOccurrences(of: "</context>", with: "tools you may use besides reading: \(tools.joined(separator: " ")) (\(how))\n</context>")
     }
     var args = ["-p", "--output-format", "json", "--model", model.config.chatModel, "--permission-mode", "default"]
-    if tools.isEmpty { args.append("--strict-mcp-config") }
+      + Prompts.ownSettings + Prompts.mcpFlags(tools + allow)
     args += ["--disallowedTools", "Write", "Edit", "NotebookEdit", "--append-system-prompt-file", Prompts.chat.path,
              "--allowedTools"] + Prompts.readOnlyRules + toolRules(tools) + allow
     // A first call that failed may still have left its transcript; then the id is taken and must be resumed.
@@ -252,7 +251,7 @@ final class ChatController {
     let timeout = model.config.chatTimeoutSeconds
     Task {
       do {
-        let p = try Proc.spawn(bin.path, args, cwd: model.home.url.path, stdin: input)
+        let p = try Proc.spawn(bin.path, args, cwd: model.home.url.path, stdin: input, env: Prompts.ownEnv)
         proc = p
         let o = await p.wait(timeout: timeout)
         proc = nil
