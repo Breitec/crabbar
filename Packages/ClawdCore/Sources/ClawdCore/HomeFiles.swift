@@ -335,9 +335,9 @@ public struct ClawdHome: Sendable {
     }
 
     /// The latest of the `at` times that has come: today's, or yesterday's last one.
-    public func slot(_ now: Date = Date()) -> Date? {
+    public func slot(_ now: Date = Date(), timeZone: TimeZone = .current) -> Date? {
       guard let at, let last = at.last else { return nil }
-      let cal = RemindWhen.calendar
+      let cal = RemindWhen.calendar(timeZone)
       let today = cal.startOfDay(for: now)
       func time(_ day: Date, _ m: Int) -> Date? { cal.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: day) }
       if let d = at.compactMap({ time(today, $0) }).filter({ $0 <= now }).max() { return d }
@@ -346,8 +346,8 @@ public struct ClawdHome: Sendable {
 
     /// An `at` task runs once per time of day; a time missed while the Mac was asleep or off, once when it is
     /// on again. A new task waits for its next time instead of going off for one already past.
-    public func dueAt(lastRun: Date?, created: Date?, now: Date = Date()) -> Bool {
-      guard let s = slot(now) else { return false }
+    public func dueAt(lastRun: Date?, created: Date?, now: Date = Date(), timeZone: TimeZone = .current) -> Bool {
+      guard let s = slot(now, timeZone: timeZone) else { return false }
       return s > max(lastRun ?? .distantPast, created ?? .distantPast)
     }
 

@@ -39,9 +39,9 @@ public enum RemindWhen {
   ]
 
   /// Gregorian whatever the system calendar is: files and ISO stamps are always Gregorian.
-  static var calendar: Calendar {
+  static func calendar(_ timeZone: TimeZone = .current) -> Calendar {
     var c = Calendar(identifier: .gregorian)
-    c.timeZone = .current
+    c.timeZone = timeZone
     c.locale = Locale(identifier: "en_US_POSIX")
     return c
   }
@@ -53,12 +53,12 @@ public enum RemindWhen {
     return c.year == year && c.month == month && c.day == day ? d : nil
   }
 
-  public static func parse(_ input: String, now: Date = Date()) -> Date? {
+  public static func parse(_ input: String, now: Date = Date(), timeZone: TimeZone = .current) -> Date? {
     var s = input.trimmingCharacters(in: .whitespaces).lowercased()
       .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
     s = s.replacingOccurrences(of: #"\s*uhr$"#, with: "", options: .regularExpression)
     if s.isEmpty { return nil }
-    let cal = calendar
+    let cal = calendar(timeZone)
     let today = cal.startOfDay(for: now)
 
     if let (n, u) = offset(s) {
@@ -158,8 +158,8 @@ public enum RemindRepeat: String, CaseIterable, Sendable {
 
   /// The first time after `after`, stepping from `at` so the time of day stays (the Mac may have been off for
   /// a few). A monthly one on the 29th-31st goes on from the shorter month's last day.
-  public func next(after: Date, from at: Date) -> Date? {
-    let cal = RemindWhen.calendar
+  public func next(after: Date, from at: Date, timeZone: TimeZone = .current) -> Date? {
+    let cal = RemindWhen.calendar(timeZone)
     for k in 1..<100_000 {
       let d: Date?
       switch self {

@@ -15,9 +15,10 @@ func date(_ s: String, _ tz: String = "Europe/Berlin") -> Date {
   return f.date(from: s)!
 }
 
-@Suite struct UsageParserTests {
-  let berlin = TimeZone(identifier: "Europe/Berlin")!
+/// The zone the expected times are written in, passed explicitly so the tests pass in any system time zone.
+let berlin = TimeZone(identifier: "Europe/Berlin")!
 
+@Suite struct UsageParserTests {
   @Test func currentFormat() throws {
     let now = date("2026-10-17 11:00")
     let u = try UsageParser.parse(try fixture("usage-2.1.299"), now: now, timeZone: berlin)
@@ -149,7 +150,7 @@ func date(_ s: String, _ tz: String = "Europe/Berlin") -> Date {
     #expect(WeatherKind.of(61).rain == 7)
     #expect(WeatherKind.of(65).rain == 16)
     #expect(WeatherKind.of(95).storm)
-    let st = SunCalc.times(lat: 50, lon: 10, date: date("2026-06-21 12:00"))
+    let st = SunCalc.times(lat: 50, lon: 10, date: date("2026-06-21 12:00"), timeZone: berlin)
     #expect(st.sr > 4 * 60 && st.sr < 6 * 60)
     #expect(st.ss > 20 * 60 && st.ss < 22 * 60)
   }
@@ -165,21 +166,21 @@ func date(_ s: String, _ tz: String = "Europe/Berlin") -> Date {
 
   @Test func remindWhen() {
     let now = date("2026-10-17 11:00")
-    #expect(RemindWhen.parse("+20m", now: now) == date("2026-10-17 11:20"))
-    #expect(RemindWhen.parse("in 2 stunden", now: now) == date("2026-10-17 13:00"))
-    #expect(RemindWhen.parse("18:30", now: now) == date("2026-10-17 18:30"))
-    #expect(RemindWhen.parse("09:30", now: now) == date("2026-10-18 09:30"))
-    #expect(RemindWhen.parse("morgen 10", now: now) == date("2026-10-18 10:00"))
-    #expect(RemindWhen.parse("tomorrow", now: now) == date("2026-10-18 10:00"))
-    #expect(RemindWhen.parse("mo 9", now: now) == date("2026-10-19 09:00"))
-    #expect(RemindWhen.parse("mon 9:00", now: now) == date("2026-10-19 09:00"))
-    #expect(RemindWhen.parse("in einer woche", now: now) == date("2026-10-24 10:00"))
-    #expect(RemindWhen.parse("19.10 14:00", now: now) == date("2026-10-19 14:00"))
-    #expect(RemindWhen.parse("1.1.27", now: now) == date("2027-01-01 10:00"))
-    #expect(RemindWhen.parse("2026-11-16 10:00", now: now) == date("2026-11-16 10:00"))
-    #expect(RemindWhen.parse("um 9", now: now) == date("2026-10-18 09:00"))
-    #expect(RemindWhen.parse("10", now: now) == nil)
-    #expect(RemindWhen.parse("Steuern zahlen", now: now) == nil)
+    #expect(RemindWhen.parse("+20m", now: now, timeZone: berlin) == date("2026-10-17 11:20"))
+    #expect(RemindWhen.parse("in 2 stunden", now: now, timeZone: berlin) == date("2026-10-17 13:00"))
+    #expect(RemindWhen.parse("18:30", now: now, timeZone: berlin) == date("2026-10-17 18:30"))
+    #expect(RemindWhen.parse("09:30", now: now, timeZone: berlin) == date("2026-10-18 09:30"))
+    #expect(RemindWhen.parse("morgen 10", now: now, timeZone: berlin) == date("2026-10-18 10:00"))
+    #expect(RemindWhen.parse("tomorrow", now: now, timeZone: berlin) == date("2026-10-18 10:00"))
+    #expect(RemindWhen.parse("mo 9", now: now, timeZone: berlin) == date("2026-10-19 09:00"))
+    #expect(RemindWhen.parse("mon 9:00", now: now, timeZone: berlin) == date("2026-10-19 09:00"))
+    #expect(RemindWhen.parse("in einer woche", now: now, timeZone: berlin) == date("2026-10-24 10:00"))
+    #expect(RemindWhen.parse("19.10 14:00", now: now, timeZone: berlin) == date("2026-10-19 14:00"))
+    #expect(RemindWhen.parse("1.1.27", now: now, timeZone: berlin) == date("2027-01-01 10:00"))
+    #expect(RemindWhen.parse("2026-11-16 10:00", now: now, timeZone: berlin) == date("2026-11-16 10:00"))
+    #expect(RemindWhen.parse("um 9", now: now, timeZone: berlin) == date("2026-10-18 09:00"))
+    #expect(RemindWhen.parse("10", now: now, timeZone: berlin) == nil)
+    #expect(RemindWhen.parse("Steuern zahlen", now: now, timeZone: berlin) == nil)
     #expect(RemindWhen.isRepeat("jeden Montag"))
   }
 
@@ -264,18 +265,18 @@ func date(_ s: String, _ tz: String = "Europe/Berlin") -> Date {
 @Suite struct ReviewRegressionTests {
   @Test func weekdaysAreWholeWords() {
     let now = date("2026-10-17 11:00")
-    #expect(RemindWhen.parse("sauna 18", now: now) == nil)
-    #expect(RemindWhen.parse("monatsende", now: now) == nil)
-    #expect(RemindWhen.parse("dose holen 9:30", now: now) == nil)
-    #expect(RemindWhen.parse("freitag 9", now: now) == date("2026-10-23 09:00"))
-    #expect(RemindWhen.parse("am montag 10:30", now: now) == date("2026-10-19 10:30"))
-    #expect(RemindWhen.parse("sat", now: now) == date("2026-10-24 10:00"))
+    #expect(RemindWhen.parse("sauna 18", now: now, timeZone: berlin) == nil)
+    #expect(RemindWhen.parse("monatsende", now: now, timeZone: berlin) == nil)
+    #expect(RemindWhen.parse("dose holen 9:30", now: now, timeZone: berlin) == nil)
+    #expect(RemindWhen.parse("freitag 9", now: now, timeZone: berlin) == date("2026-10-23 09:00"))
+    #expect(RemindWhen.parse("am montag 10:30", now: now, timeZone: berlin) == date("2026-10-19 10:30"))
+    #expect(RemindWhen.parse("sat", now: now, timeZone: berlin) == date("2026-10-24 10:00"))
   }
 
   @Test func invalidDatesFail() {
     let now = date("2026-10-17 11:00")
-    #expect(RemindWhen.parse("31.2.", now: now) == nil)
-    #expect(RemindWhen.parse("2026-02-30", now: now) == nil)
+    #expect(RemindWhen.parse("31.2.", now: now, timeZone: berlin) == nil)
+    #expect(RemindWhen.parse("2026-02-30", now: now, timeZone: berlin) == nil)
   }
 
   @Test func isoParsing() {
@@ -389,6 +390,7 @@ func date(_ s: String, _ tz: String = "Europe/Berlin") -> Date {
   }
 }
 
+/// For what is in the system's zone by design: reminder files and the times in Claude's blocks.
 func local(_ s: String) -> Date { date(s, TimeZone.current.identifier) }
 
 @Suite struct ClaudeConfigTests {
@@ -438,22 +440,22 @@ func local(_ s: String) -> Date { date(s, TimeZone.current.identifier) }
   }
 
   @Test func nextTime() {
-    let at = local("2026-10-17 09:00")
-    #expect(RemindRepeat.daily.next(after: at, from: at) == local("2026-10-18 09:00"))
+    let at = date("2026-10-17 09:00")
+    #expect(RemindRepeat.daily.next(after: at, from: at, timeZone: berlin) == date("2026-10-18 09:00"))
     // The Mac was off for a few days: the series goes on from the next time after now.
-    #expect(RemindRepeat.daily.next(after: local("2026-10-20 12:00"), from: at) == local("2026-10-21 09:00"))
-    #expect(RemindRepeat.weekly.next(after: local("2026-10-20 12:00"), from: at) == local("2026-10-24 09:00"))
-    #expect(RemindRepeat.yearly.next(after: at, from: at) == local("2027-10-17 09:00"))
+    #expect(RemindRepeat.daily.next(after: date("2026-10-20 12:00"), from: at, timeZone: berlin) == date("2026-10-21 09:00"))
+    #expect(RemindRepeat.weekly.next(after: date("2026-10-20 12:00"), from: at, timeZone: berlin) == date("2026-10-24 09:00"))
+    #expect(RemindRepeat.yearly.next(after: at, from: at, timeZone: berlin) == date("2027-10-17 09:00"))
     // The time of day stays across the end of summer time.
-    #expect(RemindRepeat.daily.next(after: local("2026-10-24 10:00"), from: local("2026-10-24 10:00")) == local("2026-10-25 10:00"))
+    #expect(RemindRepeat.daily.next(after: date("2026-10-24 10:00"), from: date("2026-10-24 10:00"), timeZone: berlin) == date("2026-10-25 10:00"))
   }
 
   @Test func monthEnds() {
-    let jan31 = local("2026-01-31 10:00")
-    #expect(RemindRepeat.monthly.next(after: jan31, from: jan31) == local("2026-02-28 10:00"))
-    #expect(RemindRepeat.monthly.next(after: local("2026-03-01 00:00"), from: jan31) == local("2026-03-31 10:00"))
-    let leap = local("2028-02-29 10:00")
-    #expect(RemindRepeat.yearly.next(after: leap, from: leap) == local("2029-02-28 10:00"))
+    let jan31 = date("2026-01-31 10:00")
+    #expect(RemindRepeat.monthly.next(after: jan31, from: jan31, timeZone: berlin) == date("2026-02-28 10:00"))
+    #expect(RemindRepeat.monthly.next(after: date("2026-03-01 00:00"), from: jan31, timeZone: berlin) == date("2026-03-31 10:00"))
+    let leap = date("2028-02-29 10:00")
+    #expect(RemindRepeat.yearly.next(after: leap, from: leap, timeZone: berlin) == date("2029-02-28 10:00"))
   }
 
   @Test func fileRoundTrip() throws {
@@ -546,25 +548,27 @@ func local(_ s: String) -> Date { date(s, TimeZone.current.identifier) }
 
   @Test func slots() {
     let t = task("09:00, 18:00")
-    #expect(t.slot(local("2026-10-17 08:00")) == local("2026-10-16 18:00"))
-    #expect(t.slot(local("2026-10-17 09:00")) == local("2026-10-17 09:00"))
-    #expect(t.slot(local("2026-10-17 17:59")) == local("2026-10-17 09:00"))
-    #expect(t.slot(local("2026-10-17 23:00")) == local("2026-10-17 18:00"))
+    #expect(t.slot(date("2026-10-17 08:00"), timeZone: berlin) == date("2026-10-16 18:00"))
+    #expect(t.slot(date("2026-10-17 09:00"), timeZone: berlin) == date("2026-10-17 09:00"))
+    #expect(t.slot(date("2026-10-17 17:59"), timeZone: berlin) == date("2026-10-17 09:00"))
+    #expect(t.slot(date("2026-10-17 23:00"), timeZone: berlin) == date("2026-10-17 18:00"))
+    // The day summer time ends: nine is still nine.
+    #expect(t.slot(date("2026-10-25 09:30"), timeZone: berlin) == date("2026-10-25 09:00"))
   }
 
   @Test func due() {
     let t = task("09:00, 18:00")
-    let made = local("2026-10-01 12:00")
+    let made = date("2026-10-01 12:00")
     // Ran at nine: not again before six.
-    #expect(!t.dueAt(lastRun: local("2026-10-17 09:00"), created: made, now: local("2026-10-17 10:00")))
-    #expect(t.dueAt(lastRun: local("2026-10-17 09:00"), created: made, now: local("2026-10-17 18:00")))
-    #expect(!t.dueAt(lastRun: local("2026-10-16 18:00"), created: made, now: local("2026-10-17 08:00")))
+    #expect(!t.dueAt(lastRun: date("2026-10-17 09:00"), created: made, now: date("2026-10-17 10:00"), timeZone: berlin))
+    #expect(t.dueAt(lastRun: date("2026-10-17 09:00"), created: made, now: date("2026-10-17 18:00"), timeZone: berlin))
+    #expect(!t.dueAt(lastRun: date("2026-10-16 18:00"), created: made, now: date("2026-10-17 08:00"), timeZone: berlin))
     // Off since the day before yesterday: one catch-up run, then quiet until the next time.
-    #expect(t.dueAt(lastRun: local("2026-10-15 18:00"), created: made, now: local("2026-10-17 10:00")))
-    #expect(!t.dueAt(lastRun: local("2026-10-17 10:00"), created: made, now: local("2026-10-17 10:01")))
+    #expect(t.dueAt(lastRun: date("2026-10-15 18:00"), created: made, now: date("2026-10-17 10:00"), timeZone: berlin))
+    #expect(!t.dueAt(lastRun: date("2026-10-17 10:00"), created: made, now: date("2026-10-17 10:01"), timeZone: berlin))
     // A new task waits for its next time instead of going off for one already past.
-    #expect(!t.dueAt(lastRun: nil, created: local("2026-10-17 10:00"), now: local("2026-10-17 10:05")))
-    #expect(t.dueAt(lastRun: nil, created: local("2026-10-17 10:00"), now: local("2026-10-17 18:01")))
+    #expect(!t.dueAt(lastRun: nil, created: date("2026-10-17 10:00"), now: date("2026-10-17 10:05"), timeZone: berlin))
+    #expect(t.dueAt(lastRun: nil, created: date("2026-10-17 10:00"), now: date("2026-10-17 18:01"), timeZone: berlin))
   }
 
   @Test func fileAndBlock() throws {

@@ -105,9 +105,11 @@ public struct WeatherKind: Sendable {
 }
 
 public enum SunCalc {
-  /// Sunrise and sunset (NOAA formulas) in local minutes from midnight.
-  public static func times(lat: Double, lon: Double, date: Date = Date()) -> (sr: Double, ss: Double) {
-    let cal = Calendar.current
+  /// Sunrise and sunset (NOAA formulas) in minutes from midnight in `timeZone`. The day of the year is Gregorian,
+  /// as the formulas expect, whatever the system calendar is.
+  public static func times(lat: Double, lon: Double, date: Date = Date(), timeZone: TimeZone = .current) -> (sr: Double, ss: Double) {
+    var cal = Calendar(identifier: .gregorian)
+    cal.timeZone = timeZone
     let doy = Double(cal.ordinality(of: .day, in: .year, for: date) ?? 1)
     let gm = 2 * Double.pi / 365 * (doy - 0.5)
     let eq = 229.18 * (0.000075 + 0.001868 * cos(gm) - 0.032077 * sin(gm) - 0.014615 * cos(2 * gm) - 0.040849 * sin(2 * gm))
@@ -117,7 +119,7 @@ public enum SunCalc {
     var c = cos(90.833 * .pi / 180) / (cos(la) * cos(dec)) - tan(la) * tan(dec)
     c = max(-0.999, min(0.999, c))
     let ha = acos(c) * 180 / .pi
-    let tz = Double(TimeZone.current.secondsFromGMT(for: date)) / 60
+    let tz = Double(timeZone.secondsFromGMT(for: date)) / 60
     func wrap(_ v: Double) -> Double { (v.truncatingRemainder(dividingBy: 1440) + 1440).truncatingRemainder(dividingBy: 1440) }
     return (wrap(720 - 4 * (lon + ha) - eq + tz), wrap(720 - 4 * (lon - ha) - eq + tz))
   }
