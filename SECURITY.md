@@ -1,0 +1,25 @@
+# Security policy
+
+## Supported versions
+
+Security fixes go into the `main` branch and the next release. Older releases are not patched: build the latest release or `main`.
+
+## Reporting a vulnerability
+
+Please don't open a public issue. Report it privately through GitHub: [Report a vulnerability](https://github.com/Breitec/crabbar/security/advisories/new) (Security tab → "Report a vulnerability").
+
+Say what you found, how to reproduce it and what an attacker could do with it. CrabBar is a spare-time project, so expect a first answer within a week. Once a fix is out, the advisory is published, with credit if you want it.
+
+Reports in German are welcome too.
+
+## What counts
+
+For example:
+
+- CrabBar running a command, script or tool beyond reading without your click, e.g. because of a chat reply, text Clawd read from a file, web page or mail, or a task file Claude wrote or changed. By design, Auto runs scripts and tool calls without a click, and tools you allowed for a task also work in the chat.
+- data leaving the Mac for hosts other than those the README names under "How it works" and "Privacy and safety" (what `claude` itself sends to Anthropic is up to Claude Code)
+- the update check downloading or running anything, or opening a page other than CrabBar's own release page
+- the `crabbar://` URL scheme doing more than refreshing or opening CrabBar's own windows
+- the iCloud snapshot reaching anyone but your own Apple Account
+
+Not in scope: bugs in Claude Code itself (see [its security policy](https://github.com/anthropics/claude-code/security/policy)), what Clawd's Remote Control session does on your behalf (it runs with your own Claude Code permissions), and attacks that need someone who can already run code as your user on your Mac.

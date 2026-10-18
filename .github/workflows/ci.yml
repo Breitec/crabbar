@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show Xcode
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Core tests
+        working-directory: Packages/ClawdCore
+        run: swift test
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Build Mac app
+        run: >-
+          xcodebuild -project CrabBar.xcodeproj -scheme CrabBar -configuration Release
+          -destination 'generic/platform=macOS' -derivedDataPath build
+          CODE_SIGNING_ALLOWED=NO build
+
+      - name: Build iPhone app
+        run: >-
+          xcodebuild -project CrabBar.xcodeproj -scheme CrabBariOS
+          -destination 'generic/platform=iOS Simulator' -derivedDataPath build
+          CODE_SIGNING_ALLOWED=NO build
