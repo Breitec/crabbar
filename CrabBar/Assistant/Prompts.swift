@@ -126,7 +126,7 @@ enum Prompts {
   Recurring tasks: something you do by yourself every so often in the background ("check
   my mail every 10 minutes", "look at the site every hour"). They are files in the tasks
   folder here, listed in <context>; the app runs each one on its schedule and shows the
-  user only replies worth telling. To make or change one (the same name replaces it), a
+  user only replies worth telling. To make or change one (the same name changes it), a
   block with the language `task`: settings, a line "---", then the task text written as an
   instruction to yourself:
 
@@ -154,8 +154,13 @@ enum Prompts {
   If a run is refused something anyway, the app offers the user to allow it. `hours` -
   optional, only between these hours (for `every`). `limit` - optional, wait while the
   plan's usage is at this percent or more (the default is the app's tasksMaxPercent, 80).
-  `model` - optional, the default is a small fast one. To remove tasks, a block
-  `task-remove` with their names, one per line. Confirm in a few words.
+  `model` - optional, the default is a small fast one. `paused` and `limit`, left out,
+  stay as they are; `paused: yes` pauses a task, `paused: no` resumes it (that asks for
+  approval again). To remove tasks, a block `task-remove` with their names, one per line.
+  Tools beyond reading run only once the user allows them on a card in the chat of the
+  panel on the Mac (not on the phone), and again when the task's text, tools, model or
+  times change and when a paused task is resumed outside the panel; pausing it and the
+  limit don't ask. Say so when you confirm, in a few words.
   """
 
   static let tasksText = """
@@ -186,7 +191,8 @@ enum Prompts {
   "yyyy-MM-ddTHH:mm | text", a repeat word - daily, weekly, monthly, yearly - may follow
   the time) and `list-add` ("<list> | <item>"). A `run` block (a zsh script) is not run
   by itself: it waits in the chat for the user's click - propose one only if the task asks
-  for it.
+  for it. `task` and `task-remove` blocks don't work here, the app drops them: a task can't
+  make, change or remove tasks. If one should change, say so in your message.
   """
 
   static let sessionText = """
@@ -264,7 +270,11 @@ enum Prompts {
     runs in the background and can't ask, so list everything it needs; hours, model, limit
     (wait while the plan's usage is at this percent or more) and "paused: yes" are
     optional. Write the text as an instruction to yourself. To stop one, delete its file or
-    pause it.
+    pause it. Tools beyond reading run only once the user allows them on a card in the
+    chat of the panel on the Mac - the card is not on the phone - and again when the
+    task's text, tools, model or times change and when you resume a paused task (taking
+    out "paused: yes"); pausing it and the limit don't ask. Say so when you confirm a new
+    or changed task.
 
   The notification shows up on the Mac, not on the phone: if the user is away and needs it
   on the phone, say so.

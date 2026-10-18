@@ -4,8 +4,8 @@ import ClawdCore
 /// Recurring tasks from ~/Clawd/tasks, every so often (`every`) or at set times of day (`at`): one at a time
 /// as a headless `claude -p`. The reply NOTHING stays silent; anything else lands in the chat with a
 /// notification. Tasks wait while usage is high.
-/// Tools beyond reading need the user's approval once per task: task files can be written by Claude
-/// (chat blocks, the phone session), so a task never gains tools on its own.
+/// Tools beyond reading need the user's approval once per task content: task files can be written by Claude
+/// (chat blocks, the phone session), so a task never gains tools on its own, and a rewritten one asks again.
 @MainActor
 @Observable
 final class TaskRunner {
@@ -16,6 +16,10 @@ final class TaskRunner {
     var asked = ""
     var history: [Report] = []
     var approved: [String]?
+    /// `TaskFile.fingerprint` of the content `approved` was given for; nil from before there was one.
+    var approvedFor: String?
+    /// The task was seen paused; only the panel's Resume or a new approval clears it.
+    var pauseSeen: Bool?
   }
   struct Report: Codable, Equatable {
     var at: Date
@@ -47,10 +51,31 @@ final class TaskRunner {
     save()
   }
 
-  /// Tools of this task the user has not approved yet.
+  /// Tools of this task the user has not approved yet. An approval holds for the content it was given for:
+  /// once the prompt, the tools, the model or the times change, or a paused task runs again without the
+  /// panel's Resume, all of its tools need approval again.
   func unapproved(_ t: ClawdHome.TaskFile) -> [String] {
-    let ok = Set(state[t.name]?.approved ?? [])
-    return t.tools.filter { !ok.contains($0) }
+    let e = state[t.name]
+    return t.unapproved(approved: e?.approved, approvedFor: e?.approvedFor, pauseSeen: e?.pauseSeen == true)
+  }
+
+  /// Pause and Resume in the panel: the user's own, so resuming there keeps the approval.
+  func setPaused(_ t: ClawdHome.TaskFile, _ paused: Bool) {
+    guard let model else { return }
+    state[t.name, default: Entry()].pauseSeen = paused ? true : nil
+    save()
+    model.home.setTaskPaused(t, paused)
+  }
+
+  /// A pause from anywhere (the chat, Claude's phone session, the file) stays on record, so that resuming
+  /// it anywhere but in the panel asks again.
+  func notePauses(_ files: [ClawdHome.TaskFile]) {
+    var changed = false
+    for t in files where t.paused && state[t.name]?.pauseSeen != true {
+      state[t.name, default: Entry()].pauseSeen = true
+      changed = true
+    }
+    if changed { save() }
   }
 
   /// Approved tools of active tasks: the chat may use them too (reading at once, actions after a click).
@@ -58,8 +83,8 @@ final class TaskRunner {
     guard let model else { return [] }
     var all = Set<String>()
     for t in model.home.taskFiles() where !t.paused {
-      let ok = Set(state[t.name]?.approved ?? [])
-      all.formUnion(t.tools.filter { ok.contains($0) })
+      let open = Set(unapproved(t))
+      all.formUnion(t.tools.filter { !open.contains($0) })
     }
     return all.sorted()
   }
@@ -74,8 +99,15 @@ final class TaskRunner {
     return pct >= max ? pct : nil
   }
 
-  func request(_ t: ClawdHome.TaskFile) {
-    if !unapproved(t).isEmpty { askApproval(t); return }
+  /// "Run now": a task still waiting for approval shows its card again, also one skipped or scrolled away,
+  /// with the file as it is now.
+  func request(_ task: ClawdHome.TaskFile) {
+    guard let t = model?.home.task(named: task.name) else { return }
+    if !unapproved(t).isEmpty {
+      state[t.name]?.asked = ""
+      askApproval(t)
+      return
+    }
     if running != nil {
       if running != t.name && !queue.contains(t.name) { queue.append(t.name) }
       return
@@ -83,36 +115,67 @@ final class TaskRunner {
     start(t)
   }
 
-  /// A card in the chat asking to allow the task's tools; asked once for the same set.
+  /// A task resumed outside the panel: its next run asks again, and the card says why.
+  func revoke(_ name: String) {
+    state[name, default: Entry()].pauseSeen = true
+    save()
+  }
+
+  /// What a card shows of the task, all that its fingerprint covers: the whole text and how it runs.
+  func describe(_ t: ClawdHome.TaskFile) -> (prompt: String, info: String) {
+    var info = [t.whenText]
+    if let h = t.hours { info.append(T("task.hours", h.0, h.1)) }
+    info.append(T("task.model", t.model.isEmpty ? (model?.config.quickModel ?? "") : t.model))
+    return (ClawdHome.visibleText(t.prompt), info.joined(separator: " · "))
+  }
+
+  /// A card in the chat asking to allow the task's tools, with what the task does; asked once for the same
+  /// content. An older card of the task that is still open no longer counts.
   func askApproval(_ t: ClawdHome.TaskFile) {
     guard let model else { return }
     let want = unapproved(t)
-    let key = "approve:" + want.joined(separator: " ")
+    let fp = t.fingerprint
+    let key = "approve:\(fp):" + want.joined(separator: " ")
     var e = state[t.name] ?? Entry()
     if e.asked == key { return }
     e.asked = key
     state[t.name] = e
     save()
-    let id = model.chat.add("clawd", "[\(t.name)] " + T("task.approveText"), task: t.name)
+    for m in model.chat.state.messages where m.grant?.task == t.name && m.grant?.kind == "approve" {
+      model.chat.setGrantState(m.id, m.grant?.fingerprint == nil || m.grant?.fingerprint == fp ? "replaced" : "changed")
+    }
+    let why = (e.approved ?? []).isEmpty ? "task.approveText"
+      : e.approvedFor == nil ? "task.approveAgain"
+      : e.approvedFor == fp && e.pauseSeen == true ? "task.approveResumed" : "task.approveChanged"
+    let d = describe(t)
+    let id = model.chat.add("clawd", "[\(t.name)] " + T(why), task: t.name)
     if let i = model.chat.index(id) {
-      model.chat.state.messages[i].grant = .init(task: t.name, rules: want, state: "pending", kind: "approve")
+      model.chat.state.messages[i].grant = .init(task: t.name, rules: want, state: "pending", kind: "approve", fingerprint: fp,
+                                                 prompt: d.prompt, info: d.info)
       model.chat.save()
     }
     if !model.panelOpen {
       model.chat.unread = true
-      Notifier.post(title: "Clawd · \(t.name)", body: T("task.approveText"))
+      Notifier.post(title: "Clawd · \(t.name)", body: T(why))
     }
   }
 
   func update() {
-    guard let model, model.config.showTasks, running == nil else { return }
+    guard let model else { return }
+    let files = model.home.taskFiles()
+    // Also with tasks switched off, so a pause made and undone meanwhile still asks on resume.
+    notePauses(files)
+    guard model.config.showTasks, running == nil else { return }
     while !queue.isEmpty {
       let n = queue.removeFirst()
       if let t = model.home.task(named: n) { start(t); if running != nil { return } }
     }
     let now = Date()
-    for t in model.home.taskFiles() {
-      guard !t.paused, !t.prompt.isEmpty, t.at != nil || t.every != nil, budgetWait(t) == nil else { continue }
+    for t in files {
+      guard !t.paused, !t.prompt.isEmpty, t.at != nil || t.every != nil else { continue }
+      // The card comes at once, not only when the task is due (asked once for the same content).
+      if !unapproved(t).isEmpty { askApproval(t); continue }
+      guard budgetWait(t) == nil else { continue }
       let last = state[t.name]?.last
       if t.at != nil {
         // Once per time of day; a time missed while the Mac slept or was off - once, when it is on again.
@@ -120,7 +183,6 @@ final class TaskRunner {
       } else {
         guard t.inHours(now), let every = t.every, now.timeIntervalSince(last ?? .distantPast) >= every else { continue }
       }
-      if !unapproved(t).isEmpty { askApproval(t); continue }
       start(t)
       if running != nil { return }
     }
@@ -142,7 +204,7 @@ final class TaskRunner {
     }
     if let r = prev?.report, !r.isEmpty { head.append("your last report to the user:\n\(r)") }
     head.append("</task>")
-    let text = model.chat.context() + "\n\n" + head.joined(separator: "\n") + "\n\n" + t.prompt
+    let text = model.chat.context(forTask: true) + "\n\n" + head.joined(separator: "\n") + "\n\n" + t.prompt
     let m = override ?? (t.model.isEmpty ? model.config.quickModel : t.model)
     let args = ["-p", "--output-format", "json", "--model", m, "--permission-mode", "default", "--no-session-persistence",
                 "--disallowedTools", "Write", "Edit", "NotebookEdit", "--append-system-prompt-file", Prompts.tasks.path,
@@ -210,7 +272,10 @@ final class TaskRunner {
       save()
       let id = model.chat.add("clawd", "[\(t.name)] " + (!said.isEmpty && !nothing ? said : T("task.needs")), task: t.name)
       if let i = model.chat.index(id) {
-        model.chat.state.messages[i].grant = .init(task: t.name, rules: want, state: "pending")
+        // The click approves the task as it ran, so the card shows that, not just what the run replied.
+        let d = describe(t)
+        model.chat.state.messages[i].grant = .init(task: t.name, rules: want, state: "pending", fingerprint: t.fingerprint,
+                                                   prompt: d.prompt, info: d.info)
         model.chat.save()
       }
       if !model.panelOpen {
@@ -226,7 +291,20 @@ final class TaskRunner {
     state[t.name] = e
     save()
     model.chat.add("clawd", "[\(t.name)] \(r.text)", run: r.run.map { .init(script: $0, state: "pending") }, task: t.name)
-    for n in model.chat.apply(r.actions) { model.chat.add("note", n) }
+    // A task may remind and keep lists, not make, change or remove tasks: its reply can come from text it read in a
+    // mail or on a web page. A `run` block stays a card that waits for the user's click.
+    var dropped: [String] = []
+    let allowed = r.actions.filter {
+      switch $0 {
+      case .remind, .remindCancel, .list: return true
+      case .task(let name, _, _), .taskBad(let name), .taskRemove(let name): dropped.append(name); return false
+      }
+    }
+    for n in model.chat.apply(allowed) { model.chat.add("note", n) }
+    if !dropped.isEmpty {
+      let names = Set(dropped.filter { !$0.isEmpty }).sorted()
+      model.chat.add("note", T("task.blocksDropped", t.name, names.isEmpty ? T("task.unnamed") : names.joined(separator: ", ")))
+    }
     if !model.panelOpen {
       model.chat.unread = true
       Notifier.post(title: "Clawd · \(t.name)", body: r.text.count > 200 ? String(r.text.prefix(200)) + "…" : r.text)
@@ -236,14 +314,30 @@ final class TaskRunner {
   }
 
   /// "Allow" on a card: approve the task's own tools, or add the refused rules to its `tools`; it runs again now.
+  /// A card holds for the content it was shown for: if the task file changed since, a new card asks instead.
   func grant(_ msgId: UUID) {
     guard let model, let i = model.chat.index(msgId), let g = model.chat.state.messages[i].grant, g.state == "pending" else { return }
     guard let t = model.home.task(named: g.task) else { model.chat.setGrantState(msgId, "gone"); return }
+    var e = state[t.name] ?? Entry()
+    guard let fp = g.fingerprint, fp == t.fingerprint else {
+      e.asked = ""
+      state[t.name] = e
+      save()
+      if unapproved(t).isEmpty { model.chat.setGrantState(msgId, "outdated"); return }
+      model.chat.setGrantState(msgId, g.fingerprint == nil ? "replaced" : "changed")
+      askApproval(t)
+      return
+    }
+    // The content approved is the one shown plus the rules added here, not whatever the file says afterwards.
+    var granted = t
     if g.kind != "approve" {
       if !model.home.grantTools(t, g.rules) { return }
+      granted.tools = t.tools + g.rules.filter { !t.tools.contains($0) }
     }
-    var e = state[t.name] ?? Entry()
-    e.approved = Array(Set((e.approved ?? []) + g.rules)).sorted()
+    let kept = e.approvedFor == fp ? (e.approved ?? []) : []
+    e.approved = Array(Set(kept + g.rules)).sorted()
+    e.approvedFor = granted.fingerprint
+    e.pauseSeen = t.paused ? true : nil
     e.last = nil
     e.asked = ""
     state[t.name] = e

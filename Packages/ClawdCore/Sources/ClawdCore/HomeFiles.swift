@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 #if os(macOS)
 
@@ -40,22 +41,31 @@ public struct ClawdHome: Sendable {
   }
 
   /// "---\nkey: value\n---\nbody" -> (front matter lines, body); nil when there is none.
+  /// Only spaces or tabs after the opening "---": `\s*` there made many blank lines without a closing "---"
+  /// take quadratic time.
   static func frontMatter(_ raw: String) -> (String, String)? {
-    guard let re = try? NSRegularExpression(pattern: #"(?s)^\s*---\s*\r?\n(.*?)\r?\n---\s*\r?\n?(.*)$"#),
+    guard let re = try? NSRegularExpression(pattern: #"(?s)^\s*---[ \t]*\r?\n(.*?)\r?\n---\s*\r?\n?(.*)$"#),
           let m = re.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
           let h = Range(m.range(at: 1), in: raw), let b = Range(m.range(at: 2), in: raw) else { return nil }
     return (String(raw[h]), String(raw[b]))
   }
 
+  /// "key: value" lines; without regex, as a value with many spaces inside would take quadratic time.
   static func keyValues(_ head: String) -> [String: String] {
     var out: [String: String] = [:]
     for line in head.split(whereSeparator: \.isNewline) {
-      guard let re = try? NSRegularExpression(pattern: #"^\s*(\w+)\s*:\s*(.*?)\s*$"#),
-            let m = re.firstMatch(in: String(line), range: NSRange(line.startIndex..., in: line)),
-            let k = Range(m.range(at: 1), in: line), let v = Range(m.range(at: 2), in: line) else { continue }
-      out[line[k].lowercased()] = String(line[v])
+      guard let k = headerKey(line), let c = line.firstIndex(of: ":") else { continue }
+      out[k] = line[line.index(after: c)...].trimmingCharacters(in: .whitespaces)
     }
     return out
+  }
+
+  /// "  Tools : x" -> "tools"; nil for a line that is not "key: value".
+  static func headerKey(_ line: Substring) -> String? {
+    guard let c = line.firstIndex(of: ":") else { return nil }
+    let k = line[..<c].trimmingCharacters(in: .whitespaces)
+    guard !k.isEmpty, k.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }) else { return nil }
+    return k.lowercased()
   }
 
   // MARK: - reminders
@@ -342,6 +352,61 @@ public struct ClawdHome: Sendable {
     }
 
     public var whenText: String { ClawdHome.whenText(every: every, at: at) }
+
+    /// SHA-256 over what a run does: the prompt, the tools, the model and when it runs. An approval holds for
+    /// this content only, so a rewritten task file asks again. `paused` and `limit` don't count, nor does
+    /// spelling (line endings, trailing spaces, tool order, "10m" or "10 min").
+    public var fingerprint: String {
+      // No regex here: a line of many spaces would make one take quadratic time, on every tick.
+      let text = prompt.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false)
+        .map { line -> Substring in
+          var end = line.endIndex
+          while end > line.startIndex, line[line.index(before: end)].isWhitespace { end = line.index(before: end) }
+          return line[..<end]
+        }
+        .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+      let when: String = at.map { $0.map(String.init).joined(separator: ",") } ?? ""
+      let span: String = hours.map { "\($0.0)-\($0.1)" } ?? ""
+      let parts: [String] = [
+        "task-v1",
+        text,
+        Set(tools).sorted().joined(separator: "\n"),
+        model.trimmingCharacters(in: .whitespaces),
+        every.map { String(format: "%.0f", $0) } ?? "",
+        when,
+        span,
+      ]
+      // Length before each part: no prompt can pass for a different split into fields.
+      let joined = parts.map { "\($0.utf8.count):\($0)" }.joined(separator: "\n")
+      return SHA256.hash(data: Data(joined.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The tools still to approve: all of them unless `approved` was given for this content, and also when
+    /// the task was seen paused but runs again without the panel's Resume (`pauseSeen`; a file edited from
+    /// outside, Claude's phone session).
+    public func unapproved(approved: [String]?, approvedFor: String?, pauseSeen: Bool) -> [String] {
+      guard approvedFor == fingerprint, paused || !pauseSeen else { return tools }
+      let ok = Set(approved ?? [])
+      return tools.filter { !ok.contains($0) }
+    }
+  }
+
+  /// A task's text for its approval card: characters that don't show (zero-width spaces, bidi overrides,
+  /// tag characters, variation selectors, control characters) appear as [U+XXXX], so nothing hides in it.
+  public static func visibleText(_ s: String) -> String {
+    var out = String.UnicodeScalarView()
+    let lines = s.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+    for u in lines.unicodeScalars {
+      let p = u.properties
+      var hidden = p.isDefaultIgnorableCodePoint
+      switch p.generalCategory {
+      case .format, .lineSeparator, .paragraphSeparator: hidden = true
+      case .control: hidden = u != "\n" && u != "\t"
+      default: break
+      }
+      if hidden { out.append(contentsOf: String(format: "[U+%04X]", u.value).unicodeScalars) } else { out.append(u) }
+    }
+    return String(out)
   }
 
   /// How often, for the panel and the chat: "at 09:00, 18:00" or "every 10 min"; `at` wins over `every`.
@@ -373,7 +438,7 @@ public struct ClawdHome: Sendable {
 
   public static func formatAt(_ m: Int) -> String { String(format: "%02d:%02d", m / 60, m % 60) }
 
-  /// "10m", "2h", "1d", "30 min", "2 Std" -> seconds; at least two minutes.
+  /// "10m", "2h", "1d", "30 min", "2 Std" -> seconds; at least two minutes, nil above a year.
   public static func parseEvery(_ s: String) -> TimeInterval? {
     let pattern = #"^(\d+)\s*(m|min|mins|minuten?|minutes?|h|std|stunden?|hours?|d|t|tage?|days?)$"#
     guard let re = try? NSRegularExpression(pattern: pattern),
@@ -388,7 +453,7 @@ public struct ClawdHome: Sendable {
     else if u.hasPrefix("h") || u.hasPrefix("s") { secs = n * 3600 }
     else { secs = n * 86400 }
     if secs < 120 { secs = 120 }
-    return secs
+    return secs <= 366 * 86400 ? secs : nil
   }
 
   public static func formatEvery(_ secs: TimeInterval) -> String {
@@ -428,7 +493,7 @@ public struct ClawdHome: Sendable {
         if let a = kv["at"] { t.atText = a; t.at = Self.parseAt(a) }
         if let tl = kv["tools"] { t.tools = Self.splitTools(tl).filter(Self.isValidToolRule) }
         if let m = kv["model"] { t.model = m }
-        if let p = kv["paused"] { t.paused = ["yes", "true", "1", "ja"].contains(p.lowercased()) }
+        if let p = kv["paused"] { t.paused = Self.isYes(p) }
         if let l = kv["limit"], let re = try? NSRegularExpression(pattern: #"^(\d{1,3})\s*%?$"#),
            let m = re.firstMatch(in: l, range: NSRange(l.startIndex..., in: l)) {
           t.limit = Int((l as NSString).substring(with: m.range(at: 1)))
@@ -444,7 +509,27 @@ public struct ClawdHome: Sendable {
     return out
   }
 
-  public func task(named n: String) -> TaskFile? { taskFiles().first { $0.name == n } }
+  /// By name; ignoring case as the Mac's file system does, so "mail" is the task in Mail.md.
+  public func task(named n: String) -> TaskFile? {
+    let all = taskFiles()
+    return all.first { $0.name == n } ?? all.first { $0.name.compare(n, options: .caseInsensitive) == .orderedSame }
+  }
+
+  /// A `task` block over the task it replaces: what it leaves out of `paused` and `limit` stays as it was.
+  /// `resumes` - it unpauses a paused task, which then needs approval again (`paused` is not in the fingerprint).
+  public static func mergedHead(_ head: [String: String], over old: TaskFile?) -> (head: [String: String], resumes: Bool) {
+    guard let old else { return (head, false) }
+    var h = head
+    if (h["limit"] ?? "").isEmpty, let l = old.limit { h["limit"] = "\(l)" }
+    if (h["paused"] ?? "").isEmpty {
+      if old.paused { h["paused"] = "yes" }
+      return (h, false)
+    }
+    return (h, old.paused && !isYes(h["paused"] ?? ""))
+  }
+
+  /// "paused: yes" and the like.
+  public static func isYes(_ v: String) -> Bool { ["yes", "true", "1", "ja"].contains(v.trimmingCharacters(in: .whitespaces).lowercased()) }
 
   @discardableResult
   public func newTask(name: String, head: [String: String], prompt: String) -> URL? {
@@ -467,33 +552,43 @@ public struct ClawdHome: Sendable {
   }
 
   public func setTaskPaused(_ t: TaskFile, _ paused: Bool) {
-    guard var raw = Self.read(t.path) else { return }
-    raw = raw.replacingOccurrences(of: #"(?m)^\s*paused\s*:.*\r?\n"#, with: "", options: .regularExpression)
-    if paused {
-      if raw.range(of: #"^\s*---\s*\r?\n"#, options: .regularExpression) != nil {
-        raw = raw.replacingOccurrences(of: #"^(\s*---\s*\r?\n)"#, with: "$1paused: yes\n", options: .regularExpression)
-      } else {
-        raw = "---\npaused: yes\n---\n" + raw
-      }
-    }
-    Self.rewrite(t.path, raw)
+    guard let raw = Self.read(t.path) else { return }
+    Self.rewrite(t.path, Self.settingHeader(raw, "paused", paused ? "yes" : nil))
   }
 
   /// Rewrites the task's `tools:` line with the granted rules added.
   public func grantTools(_ t: TaskFile, _ rules: [String]) -> Bool {
-    guard var raw = Self.read(t.path) else { return false }
+    guard let raw = Self.read(t.path) else { return false }
     let all = t.tools + rules.filter { !t.tools.contains($0) }
-    let line = "tools: " + all.joined(separator: " ")
-    let esc = NSRegularExpression.escapedTemplate(for: line)
-    if raw.range(of: #"(?m)^\s*tools\s*:"#, options: .regularExpression) != nil {
-      raw = raw.replacingOccurrences(of: #"(?m)^\s*tools\s*:.*$"#, with: esc, options: .regularExpression)
-    } else if raw.range(of: #"^\s*---\s*\r?\n"#, options: .regularExpression) != nil {
-      raw = raw.replacingOccurrences(of: #"^(\s*---\s*\r?\n)"#, with: "$1" + esc + "\n", options: .regularExpression)
-    } else {
-      raw = "---\n\(line)\n---\n" + raw
-    }
-    Self.rewrite(t.path, raw)
+    Self.rewrite(t.path, Self.settingHeader(raw, "tools", all.joined(separator: " ")))
     return true
+  }
+
+  /// The file with one front-matter key set, or removed with nil. Only the header changes: the text below
+  /// stays as it is (a "tools:" line in it too), so the task's fingerprint changes only by that key.
+  /// Line endings become "\n", which also makes a CRLF file work.
+  static func settingHeader(_ raw: String, _ key: String, _ value: String?) -> String {
+    let text = raw.replacingOccurrences(of: "\r\n", with: "\n")
+    var head: [String] = []
+    var body = text
+    if let (h, b) = frontMatter(text) {
+      head = h.isEmpty ? [] : h.components(separatedBy: "\n")
+      body = b
+    } else if value == nil {
+      return text
+    }
+    var out: [String] = []
+    var set = value == nil
+    for line in head {
+      if headerKey(line[...]) == key {
+        if !set, let value { out.append("\(key): \(value)"); set = true }
+        continue
+      }
+      out.append(line)
+    }
+    if !set, let value { out.insert("\(key): \(value)", at: 0) }
+    // An empty header still needs its blank line, or "---\n---" would not count as one.
+    return "---\n" + out.joined(separator: "\n") + "\n---\n" + body
   }
 }
 #endif

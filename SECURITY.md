@@ -16,7 +16,7 @@ Reports in German are welcome too.
 
 For example:
 
-- CrabBar running a command, script or tool beyond reading without your click, e.g. because of a chat reply, text Clawd read from a file, web page or mail, or a task file Claude wrote or changed. By design, Auto runs scripts and tool calls without a click, and tools you allowed for a task also work in the chat.
+- CrabBar running a command, script or tool beyond reading without your click, e.g. because of a chat reply, text Clawd read from a file, web page or mail, or a task file Claude wrote or changed. By design, Auto runs the chat's scripts and tool calls without a click (scripts a task proposes still wait), and tools you allowed for a task also work in the chat. A task uses the tools you allowed for it without asking again, and what it reads can steer them, so allow a task only what it may do unattended (a whole MCP server includes sending and deleting).
 - data leaving the Mac for hosts other than those the README names under "How it works" and "Privacy and safety" (what `claude` itself sends to Anthropic is up to Claude Code)
 - the update check downloading or running anything, or opening a page other than CrabBar's own release page
 - the `crabbar://` URL scheme doing more than refreshing or opening CrabBar's own windows

@@ -10,8 +10,11 @@ struct ChatMessage: Codable, Identifiable, Equatable {
   struct Grant: Codable, Equatable {
     var task: String
     var rules: [String]
-    var state: String      // pending | granted | skipped | gone
+    var state: String      // pending | granted | skipped | gone | changed
     var kind: String?      // nil: rules a run was refused; "approve": tools a task file asks for
+    var fingerprint: String?  // the task content the card was shown for
+    var prompt: String?       // that content as the card shows it: the whole text, hidden characters visible
+    var info: String?         // when it runs and with which model
   }
   struct Call: Codable, Equatable {
     var tool: String
@@ -133,10 +136,12 @@ final class ChatController {
 
   // MARK: - context
 
-  func context() -> String {
+  /// `forTask` - for a task's run: Auto is for the chat only, a task's run block always waits for the click.
+  func context(forTask: Bool = false) -> String {
     guard let model else { return "" }
-    var lines = ["<context>", "now: \(Format.contextNow())",
-                 "auto-run: " + (model.config.chatAutoRun ? "on - your run scripts start at once, without the user's click" : "off")]
+    let auto = forTask ? "off for tasks - a run block waits for the user's click"
+      : model.config.chatAutoRun ? "on - your run scripts start at once, without the user's click" : "off"
+    var lines = ["<context>", "now: \(Format.contextNow())", "auto-run: " + auto]
     let tips = model.advisor.tips
     if tips.isEmpty { lines.append("tips: none") } else {
       lines.append("tips:")
@@ -337,7 +342,13 @@ final class ChatController {
         let ok = asked.filter(ClawdHome.isValidToolRule)
         let dropped = asked.filter { !ClawdHome.isValidToolRule($0) }
         head["tools"] = ok.joined(separator: " ")
+        // A block that leaves out paused or limit keeps them. One that unpauses a paused task takes its
+        // approval back: `paused` is not part of what an approval holds for. Found ignoring case, as the file is.
+        let old = home.task(named: ClawdHome.safeName(name))
+        let merged = ClawdHome.mergedHead(head, over: old)
+        head = merged.head
         if home.newTask(name: name, head: head, prompt: prompt) != nil {
+          if merged.resumes, let old { model?.tasks.revoke(old.name) }
           let when = ClawdHome.whenText(every: ClawdHome.parseEvery(head["every"] ?? ""), at: ClawdHome.parseAt(head["at"] ?? ""))
           notes.append(T("chat.taskSet", name, when))
         }

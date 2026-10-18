@@ -276,6 +276,19 @@ struct ChatTab: View {
       Text(T(g.kind == "approve" ? "task.approveHead" : "task.grantHead", g.task)).font(.system(size: 10, weight: .semibold))
         .foregroundStyle(Palette.textHead)
       ForEach(g.rules, id: \.self) { Text($0).font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.textMain) }
+      if g.state == "pending", let p = g.prompt {
+        // The whole task as it will run: what the click approves.
+        let text = Text(p).font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.textMain)
+          .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+        ViewThatFits(in: .vertical) {
+          text
+          ScrollView { text }
+        }
+        .frame(maxHeight: 160)
+        .padding(6)
+        .background(RoundedRectangle(cornerRadius: 4).stroke(Palette.border))
+        if let info = g.info { Text(info).font(.system(size: 10)).foregroundStyle(Palette.textDim) }
+      }
       if g.state == "pending" {
         HStack(spacing: 10) {
           Button(T("task.grant")) { model.tasks.grant(id) }.buttonStyle(.borderedProminent).controlSize(.small)
@@ -414,6 +427,7 @@ struct RemindersTab: View {
       if model.tasks.queue.contains(t.name) { return T("task.queued") }
       if t.paused { return T("task.paused") }
       if t.every == nil && t.at == nil { return T("task.badEvery") }
+      if !model.tasks.unapproved(t).isEmpty { return T("task.waitsApproval") }
       if let w = model.tasks.budgetWait(t) { return T("task.budget", w) }
       if let e = st?.error, !e.isEmpty { return T("task.lastError", e) }
       if let l = st?.last { return T("task.last", Format.remindTime(l)) }
@@ -429,7 +443,7 @@ struct RemindersTab: View {
         Spacer()
         Menu {
           Button(T("task.now")) { model.tasks.request(t) }
-          Button(t.paused ? T("task.resume") : T("task.pause")) { model.home.setTaskPaused(t, !t.paused); refresh += 1 }
+          Button(t.paused ? T("task.resume") : T("task.pause")) { model.tasks.setPaused(t, !t.paused); refresh += 1 }
           Button(T("task.open")) { NSWorkspace.shared.open(t.path) }
           Button(T("task.delete"), role: .destructive) {
             _ = model.home.removeTask(t.name)

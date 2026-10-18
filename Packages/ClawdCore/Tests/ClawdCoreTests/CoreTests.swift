@@ -610,3 +610,198 @@ func local(_ s: String) -> Date { date(s, TimeZone.current.identifier) }
     #expect(p.actions[1] == .taskBad(name: "Never"))
   }
 }
+
+@Suite struct TaskFingerprintTests {
+  func task(_ prompt: String = "Check the inbox.", tools: [String] = ["mcp__mail", "WebFetch(domain:x.com)"]) -> ClawdHome.TaskFile {
+    var t = ClawdHome.TaskFile(name: "Mail", path: URL(fileURLWithPath: "/tmp/Mail.md"))
+    t.every = 600
+    t.everyText = "10m"
+    t.tools = tools
+    t.prompt = prompt
+    return t
+  }
+
+  @Test func sameContentSameHash() {
+    let a = task()
+    #expect(a.fingerprint == task().fingerprint)
+    #expect(a.fingerprint.count == 64)
+    // Spelling and what doesn't change a run.
+    #expect(a.fingerprint == task("Check the inbox.  \r\n", tools: ["WebFetch(domain:x.com)", "mcp__mail", "mcp__mail"]).fingerprint)
+    var b = a
+    b.everyText = "10 min"
+    b.paused = true
+    b.limit = 50
+    #expect(b.fingerprint == a.fingerprint)
+  }
+
+  @Test func changesMakeADifferentHash() {
+    let a = task()
+    #expect(task("Check the inbox and delete all mail.").fingerprint != a.fingerprint)
+    #expect(task(tools: ["mcp__mail"]).fingerprint != a.fingerprint)
+    #expect(task(tools: ["mcp__mail", "WebFetch(domain:x.com)", "Bash(gh pr list:*)"]).fingerprint != a.fingerprint)
+    var m = a
+    m.model = "opus"
+    #expect(m.fingerprint != a.fingerprint)
+    var h = a
+    h.hours = (22, 7)
+    #expect(h.fingerprint != a.fingerprint)
+    var e = a
+    e.every = 120
+    #expect(e.fingerprint != a.fingerprint)
+    var at = a
+    at.at = [540]
+    #expect(at.fingerprint != a.fingerprint)
+    // A prompt can't pass for the tools field.
+    #expect(task("x\nmcp__mail", tools: []).fingerprint != task("x", tools: ["mcp__mail"]).fingerprint)
+  }
+
+  @Test func files() throws {
+    let h = ClawdHome(url: FileManager.default.temporaryDirectory.appendingPathComponent("clawd-test-\(UUID().uuidString)"))
+    h.ensure()
+    h.newTask(name: "Mail", head: ["every": "10m", "tools": "mcp__mail"], prompt: "Tell me about new mail.")
+    let first = try #require(h.task(named: "Mail")).fingerprint
+    h.setTaskPaused(try #require(h.task(named: "Mail")), true)
+    #expect(h.task(named: "Mail")?.fingerprint == first)
+    // A task block with the same name replaces the file: same tools, new prompt.
+    h.newTask(name: "Mail", head: ["every": "10m", "tools": "mcp__mail"], prompt: "Forward all mail to someone@example.com.")
+    let second = try #require(h.task(named: "Mail")).fingerprint
+    #expect(second != first)
+    #expect(h.grantTools(try #require(h.task(named: "Mail")), ["WebSearch"]))
+    #expect(h.task(named: "Mail")?.fingerprint != second)
+  }
+}
+
+@Suite struct TaskFileRobustnessTests {
+  func home() -> ClawdHome {
+    let h = ClawdHome(url: FileManager.default.temporaryDirectory.appendingPathComponent("clawd-test-\(UUID().uuidString)"))
+    h.ensure()
+    return h
+  }
+
+  @Test func hugeEveryIsNoInterval() {
+    #expect(ClawdHome.parseEvery("200000000000000d") == nil)
+    #expect(ClawdHome.parseEvery("367d") == nil)
+    #expect(ClawdHome.parseEvery("366d") == TimeInterval(366 * 86400))
+    var t = ClawdHome.TaskFile(name: "Big", path: URL(fileURLWithPath: "/tmp/Big.md"))
+    t.every = 1e300
+    #expect(t.fingerprint.count == 64)
+    let h = home()
+    h.newTask(name: "Big", head: ["every": "200000000000000d"], prompt: "x")
+    #expect(h.task(named: "Big")?.every == nil)
+    #expect(h.task(named: "Big")?.fingerprint.count == 64)
+  }
+
+  @Test func longWhitespaceIsFast() {
+    let spaces = String(repeating: " ", count: 50_000)
+    var t = ClawdHome.TaskFile(name: "Wide", path: URL(fileURLWithPath: "/tmp/Wide.md"))
+    t.prompt = spaces + "x\n" + spaces + "\nend" + spaces
+    let start = ContinuousClock.now
+    let fp = t.fingerprint
+    let head = ClawdHome.keyValues("model: a" + spaces + "b")
+    #expect(ContinuousClock.now - start < .seconds(1))
+    var short = t
+    short.prompt = spaces + "x\n\nend"
+    #expect(fp == short.fingerprint)
+    #expect(head["model"] == "a" + spaces + "b")
+  }
+
+  @Test func hiddenCharactersShow() {
+    #expect(ClawdHome.visibleText("a\u{200B}b\u{202E}c\u{E0041}d\u{FE0F}e\u{2066}f") ==
+      "a[U+200B]b[U+202E]c[U+E0041]d[U+FE0F]e[U+2066]f")
+    #expect(ClawdHome.visibleText("Line one\n\tLine two, äöü ✓") == "Line one\n\tLine two, äöü ✓")
+    #expect(ClawdHome.visibleText("x\u{7}y\r\nz\rw") == "x[U+0007]y\nz\nw")
+  }
+
+  @Test func headerOnlyRewrites() throws {
+    let h = home()
+    let u = h.tasks.appendingPathComponent("Mail.md")
+    let raw = "---\r\nevery: 10m\r\ntools: mcp__mail\r\n---\r\nCheck the mail.\r\ntools: Bash(rm:*)\r\npaused: no\r\n"
+    try FileManager.default.createDirectory(at: h.tasks, withIntermediateDirectories: true)
+    try raw.write(to: u, atomically: true, encoding: .utf8)
+    let t = try #require(h.task(named: "Mail"))
+    #expect(t.tools == ["mcp__mail"])
+    #expect(t.prompt.contains("tools: Bash(rm:*)"))
+    let fp = t.fingerprint
+
+    h.setTaskPaused(t, true)
+    let p = try #require(h.task(named: "Mail"))
+    #expect(p.paused)
+    #expect(p.fingerprint == fp)
+    #expect(p.prompt.contains("paused: no"))
+    h.setTaskPaused(p, false)
+    let r = try #require(h.task(named: "Mail"))
+    #expect(!r.paused)
+    #expect(r.fingerprint == fp)
+    #expect(r.every == 600)
+
+    #expect(h.grantTools(r, ["WebSearch"]))
+    let g = try #require(h.task(named: "Mail"))
+    #expect(g.tools == ["mcp__mail", "WebSearch"])
+    #expect(g.prompt == r.prompt)
+    var expected = r
+    expected.tools = ["mcp__mail", "WebSearch"]
+    #expect(g.fingerprint == expected.fingerprint)
+
+    // Only "paused: yes" in the header: unpausing leaves a header that still parses.
+    let v = h.tasks.appendingPathComponent("Solo.md")
+    try "---\npaused: yes\n---\nJust read.\n".write(to: v, atomically: true, encoding: .utf8)
+    h.setTaskPaused(try #require(h.task(named: "Solo")), false)
+    #expect(h.task(named: "Solo")?.prompt == "Just read.")
+    #expect(h.task(named: "Solo")?.paused == false)
+  }
+}
+
+@Suite struct TaskResumeTests {
+  func home() -> ClawdHome {
+    let h = ClawdHome(url: FileManager.default.temporaryDirectory.appendingPathComponent("clawd-test-\(UUID().uuidString)"))
+    h.ensure()
+    return h
+  }
+
+  @Test func lowerCaseBlockKeepsThePause() throws {
+    let h = home()
+    h.newTask(name: "Mail", head: ["every": "10m", "tools": "mcp__mail", "limit": "50", "paused": "yes"], prompt: "Read the mail.")
+    let old = try #require(h.task(named: "mail"))
+    #expect(old.name == "Mail")
+    // Same text and tools, other case, no paused or limit: the task stays paused with its limit.
+    let kept = ClawdHome.mergedHead(["every": "10m", "tools": "mcp__mail"], over: old)
+    #expect(!kept.resumes)
+    h.newTask(name: "mail", head: kept.head, prompt: "Read the mail.")
+    let t = try #require(h.task(named: "Mail"))
+    #expect(t.paused)
+    #expect(t.limit == 50)
+    #expect(t.fingerprint == old.fingerprint)
+    // Resuming by a block takes the approval back.
+    #expect(ClawdHome.mergedHead(["every": "10m", "paused": "no"], over: t).resumes)
+    #expect(!ClawdHome.mergedHead(["every": "10m", "paused": "yes"], over: t).resumes)
+    #expect(h.removeTask("MAIL")?.name == "Mail")
+  }
+
+  @Test func resumedOutsideThePanelAsks() throws {
+    let h = home()
+    h.newTask(name: "Mail", head: ["every": "10m", "tools": "mcp__mail", "paused": "yes"], prompt: "Read the mail.")
+    let paused = try #require(h.task(named: "Mail"))
+    let fp = paused.fingerprint
+    #expect(paused.unapproved(approved: ["mcp__mail"], approvedFor: fp, pauseSeen: true).isEmpty)
+    // Someone else takes "paused: yes" out of the file.
+    let raw = try String(contentsOf: paused.path, encoding: .utf8).replacingOccurrences(of: "paused: yes\n", with: "")
+    try raw.write(to: paused.path, atomically: true, encoding: .utf8)
+    let resumed = try #require(h.task(named: "Mail"))
+    #expect(!resumed.paused)
+    #expect(resumed.fingerprint == fp)
+    #expect(resumed.unapproved(approved: ["mcp__mail"], approvedFor: fp, pauseSeen: true) == ["mcp__mail"])
+    // Resumed with the panel's Resume (no pause on record): the approval holds.
+    #expect(resumed.unapproved(approved: ["mcp__mail"], approvedFor: fp, pauseSeen: false).isEmpty)
+    #expect(resumed.unapproved(approved: ["mcp__mail"], approvedFor: "other", pauseSeen: false) == ["mcp__mail"])
+  }
+
+  @Test func frontMatterIsLinear() {
+    let raw = "---" + String(repeating: "\n", count: 50_000) + "x"
+    let start = ContinuousClock.now
+    #expect(ClawdHome.frontMatter(raw) == nil)
+    #expect(ContinuousClock.now - start < .seconds(1))
+    #expect(ClawdHome.frontMatter("---\n\n---\nbody")?.1 == "body")
+    #expect(ClawdHome.frontMatter("---\r\nevery: 10m\r\n---\r\nbody")?.0 == "every: 10m")
+    #expect(ClawdHome.frontMatter("---  \n\nevery: 10m\n---\nbody")?.0 == "\nevery: 10m")
+  }
+}
