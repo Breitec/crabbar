@@ -80,9 +80,7 @@ final class ChatController {
 
   var transcriptExists: Bool {
     guard let home = model?.home else { return false }
-    let key = home.url.path.replacingOccurrences(of: "[^A-Za-z0-9]", with: "-", options: .regularExpression)
-    let t = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects/\(key)/\(state.sessionId).jsonl")
-    return FileManager.default.fileExists(atPath: t.path)
+    return FileManager.default.fileExists(atPath: ClaudeConfig.transcript(cwd: home.url.path, sessionId: state.sessionId).path)
   }
 
   /// Local and phone messages in one feed, in time order.
@@ -150,7 +148,10 @@ final class ChatController {
     let rem = model.home.activeReminders()
     if rem.isEmpty { lines.append("reminders: none") } else {
       lines.append("reminders (file in the reminders folder - time - text):")
-      for r in rem { lines.append("- \(r.rel) - \(Format.iso(r.at).replacingOccurrences(of: "T", with: " ")) - \(r.text)") }
+      for r in rem {
+        let rep = r.repeats.map { " (repeats \($0.rawValue))" } ?? ""
+        lines.append("- \(r.rel) - \(Format.iso(r.at).replacingOccurrences(of: "T", with: " "))\(rep) - \(r.text)")
+      }
     }
     let names = model.home.listNames(defaultName: T("lists.default"))
     if !names.isEmpty {
@@ -165,7 +166,7 @@ final class ChatController {
       lines.append("recurring tasks (files in the tasks folder):")
       for t in tasks {
         let last = model.tasks.state[t.name]?.last.map { Format.local($0, "MMdd HH:mm") } ?? "never"
-        var s = "- \(t.name): every \(t.everyText)"
+        var s = "- \(t.name): " + (t.at != nil ? "at \(t.atText)" : "every \(t.everyText)")
         if !t.tools.isEmpty { s += ", tools \(t.tools.joined(separator: " "))" }
         if let h = t.hours { s += ", hours \(h.0)-\(h.1)" }
         if t.paused { s += ", paused" }
@@ -316,9 +317,9 @@ final class ChatController {
     var notes: [String] = []
     for a in actions {
       switch a {
-      case .remind(let at, let text):
-        home.newReminder(at: at, text: text)
-        notes.append(T("chat.remindSet", Format.remindTime(at), text))
+      case .remind(let at, let text, let rep):
+        home.newReminder(at: at, text: text, repeats: rep)
+        notes.append(T("chat.remindSet", Format.remindTime(at) + (rep.map { ", " + $0.label } ?? ""), text))
       case .remindCancel(let name):
         if let r = home.removeReminder(name) { notes.append(T("chat.remindCancel", r.text)) }
       case .list(let kind, let list, let item):
@@ -336,7 +337,10 @@ final class ChatController {
         let ok = asked.filter(ClawdHome.isValidToolRule)
         let dropped = asked.filter { !ClawdHome.isValidToolRule($0) }
         head["tools"] = ok.joined(separator: " ")
-        if home.newTask(name: name, head: head, prompt: prompt) != nil { notes.append(T("chat.taskSet", name, head["every"] ?? "")) }
+        if home.newTask(name: name, head: head, prompt: prompt) != nil {
+          let when = ClawdHome.whenText(every: ClawdHome.parseEvery(head["every"] ?? ""), at: ClawdHome.parseAt(head["at"] ?? ""))
+          notes.append(T("chat.taskSet", name, when))
+        }
         if !dropped.isEmpty { notes.append(T("chat.taskDropped", dropped.joined(separator: " "))) }
       case .taskBad(let name):
         notes.append(T("chat.taskBad", name))
@@ -433,12 +437,11 @@ final class ChatController {
 
   // MARK: - the phone conversation
 
-  /// Clawd's own session keeps its conversation in ~/.claude/projects/<home>/<id>.jsonl; only what was
-  /// added since the last look is read.
+  /// Clawd's own session keeps its conversation in projects/<home>/<id>.jsonl in Claude Code's folder; only
+  /// what was added since the last look is read.
   func updateRemoteFeed() {
     guard let model, let id = model.clawdSession.sessionId else { return }
-    let key = model.home.url.path.replacingOccurrences(of: "[^A-Za-z0-9]", with: "-", options: .regularExpression)
-    let path = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects/\(key)/\(id).jsonl").path
+    let path = ClaudeConfig.transcript(cwd: model.home.url.path, sessionId: id).path
     if path != remotePath { remotePath = path; remoteOffset = 0; remote = [] }
     guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
           let size = (attrs[.size] as? NSNumber)?.uint64Value else { return }

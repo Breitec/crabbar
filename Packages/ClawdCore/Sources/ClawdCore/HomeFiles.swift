@@ -32,6 +32,13 @@ public struct ClawdHome: Sendable {
     try? s.data(using: .utf8)?.write(to: u, options: .atomic)
   }
 
+  /// Task files keep their creation date when rewritten: an `at` task counts its times from when it first appeared.
+  static func rewrite(_ u: URL, _ s: String) {
+    let made = (try? FileManager.default.attributesOfItem(atPath: u.path))?[.creationDate] as? Date
+    write(u, s)
+    if let made { try? FileManager.default.setAttributes([.creationDate: made], ofItemAtPath: u.path) }
+  }
+
   /// "---\nkey: value\n---\nbody" -> (front matter lines, body); nil when there is none.
   static func frontMatter(_ raw: String) -> (String, String)? {
     guard let re = try? NSRegularExpression(pattern: #"(?s)^\s*---\s*\r?\n(.*?)\r?\n---\s*\r?\n?(.*)$"#),
@@ -58,6 +65,7 @@ public struct ClawdHome: Sendable {
     public var rel: String
     public var at: Date
     public var text: String
+    public var repeats: RemindRepeat?
     public var id: String { path.path }
   }
 
@@ -81,9 +89,12 @@ public struct ClawdHome: Sendable {
       let u = reminders.appendingPathComponent(rel)
       guard let raw = Self.read(u) else { continue }
       var at: Date?
+      var repeats: RemindRepeat?
       var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
       if let (h, b) = Self.frontMatter(raw) {
-        if let a = Self.keyValues(h)["at"] { at = Format.parseISO(a) }
+        let kv = Self.keyValues(h)
+        if let a = kv["at"] { at = Format.parseISO(a) }
+        repeats = kv["repeat"].flatMap(RemindRepeat.word)
         text = b.trimmingCharacters(in: .whitespacesAndNewlines)
       }
       let base = u.deletingPathExtension().lastPathComponent
@@ -91,13 +102,13 @@ public struct ClawdHome: Sendable {
       if at == nil { at = fromName?.0 }
       guard let at else { continue }
       if text.isEmpty { text = fromName?.1 ?? base }
-      out.append(Reminder(path: u, rel: rel, at: at, text: text))
+      out.append(Reminder(path: u, rel: rel, at: at, text: text, repeats: repeats))
     }
     return out.sorted { $0.at < $1.at }
   }
 
   @discardableResult
-  public func newReminder(at: Date, text: String) -> URL {
+  public func newReminder(at: Date, text: String, repeats: RemindRepeat? = nil) -> URL {
     let dir = reminders.appendingPathComponent(ym(at))
     var title = Self.safeName(text)
     if title.count > 50 { title = String(title.prefix(50)).trimmingCharacters(in: .whitespaces) }
@@ -108,7 +119,8 @@ public struct ClawdHome: Sendable {
       u = dir.appendingPathComponent("\(base) (\(i)).md")
       i += 1
     }
-    Self.write(u, "---\nat: \(Format.iso(at))\n---\n\(text)\n")
+    let rep = repeats.map { "repeat: \($0.rawValue)\n" } ?? ""
+    Self.write(u, "---\nat: \(Format.iso(at))\n\(rep)---\n\(text)\n")
     return u
   }
 
@@ -149,9 +161,21 @@ public struct ClawdHome: Sendable {
     do { try FileManager.default.moveItem(at: r.path, to: to); return to } catch { return nil }
   }
 
+  /// Fires a due reminder: its file goes to done, and a repeating one leaves a file for its next time after
+  /// `now` (the Mac may have been off for a few of them).
+  @discardableResult
+  public func fire(_ r: Reminder, now: Date = Date()) -> (done: URL?, next: URL?) {
+    let done = markDone(r)
+    guard let rep = r.repeats, let at = rep.next(after: now, from: r.at) else { return (done, nil) }
+    return (done, newReminder(at: at, text: r.text, repeats: rep))
+  }
+
+  /// Moving one is a new file for the new time (the time is in the file name too); a repeating one keeps
+  /// repeating, from the new time.
+  @discardableResult
   public func moveReminder(_ r: Reminder, to at: Date, text: String? = nil) -> URL {
     try? FileManager.default.removeItem(at: r.path)
-    return newReminder(at: at, text: text ?? r.text)
+    return newReminder(at: at, text: text ?? r.text, repeats: r.repeats)
   }
 
   /// Recently fired ones, newest first.
@@ -275,6 +299,9 @@ public struct ClawdHome: Sendable {
     public var path: URL
     public var every: TimeInterval?
     public var everyText = ""
+    /// `at: 09:00, 18:00` instead of `every`: minutes after midnight, sorted.
+    public var at: [Int]?
+    public var atText = ""
     public var tools: [String] = []
     public var model = ""
     public var hours: (Int, Int)?
@@ -282,9 +309,10 @@ public struct ClawdHome: Sendable {
     public var paused = false
     public var prompt = ""
     public var id: String { name }
+    public var created: Date? { (try? FileManager.default.attributesOfItem(atPath: path.path))?[.creationDate] as? Date }
 
     public static func == (a: TaskFile, b: TaskFile) -> Bool {
-      a.name == b.name && a.path == b.path && a.everyText == b.everyText && a.tools == b.tools &&
+      a.name == b.name && a.path == b.path && a.everyText == b.everyText && a.atText == b.atText && a.tools == b.tools &&
         a.model == b.model && a.hours?.0 == b.hours?.0 && a.hours?.1 == b.hours?.1 &&
         a.limit == b.limit && a.paused == b.paused && a.prompt == b.prompt
     }
@@ -295,7 +323,55 @@ public struct ClawdHome: Sendable {
       let h = Calendar.current.component(.hour, from: now)
       return a <= b ? (h >= a && h < b) : (h >= a || h < b)
     }
+
+    /// The latest of the `at` times that has come: today's, or yesterday's last one.
+    public func slot(_ now: Date = Date()) -> Date? {
+      guard let at, let last = at.last else { return nil }
+      let cal = RemindWhen.calendar
+      let today = cal.startOfDay(for: now)
+      func time(_ day: Date, _ m: Int) -> Date? { cal.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: day) }
+      if let d = at.compactMap({ time(today, $0) }).filter({ $0 <= now }).max() { return d }
+      return cal.date(byAdding: .day, value: -1, to: today).flatMap { time($0, last) }
+    }
+
+    /// An `at` task runs once per time of day; a time missed while the Mac was asleep or off, once when it is
+    /// on again. A new task waits for its next time instead of going off for one already past.
+    public func dueAt(lastRun: Date?, created: Date?, now: Date = Date()) -> Bool {
+      guard let s = slot(now) else { return false }
+      return s > max(lastRun ?? .distantPast, created ?? .distantPast)
+    }
+
+    public var whenText: String { ClawdHome.whenText(every: every, at: at) }
   }
+
+  /// How often, for the panel and the chat: "at 09:00, 18:00" or "every 10 min"; `at` wins over `every`.
+  public static func whenText(every: TimeInterval?, at: [Int]?) -> String {
+    if let at { return T("task.at", at.map(formatAt).joined(separator: ", ")) }
+    if let every { return formatEvery(every) }
+    return T("task.badEvery")
+  }
+
+  /// "09:00, 18:00", "9", "9h30" -> minutes after midnight, sorted; nil if any of them is not a time of day.
+  /// As with `every`, runs are at least two minutes apart: a time closer to the one before is dropped, also
+  /// across midnight.
+  public static func parseAt(_ s: String) -> [Int]? {
+    guard let re = try? NSRegularExpression(pattern: #"^(\d{1,2})(?:[:.h](\d{2})|h)?$"#) else { return nil }
+    var out = Set<Int>()
+    for w in s.lowercased().split(whereSeparator: { ",; \t".contains($0) }) {
+      let ns = String(w) as NSString
+      guard let m = re.firstMatch(in: String(w), range: NSRange(location: 0, length: ns.length)),
+            let h = Int(ns.substring(with: m.range(at: 1))), h <= 23 else { return nil }
+      let mi = m.range(at: 2).location == NSNotFound ? 0 : Int(ns.substring(with: m.range(at: 2))) ?? 0
+      if mi > 59 { return nil }
+      out.insert(h * 60 + mi)
+    }
+    var kept: [Int] = []
+    for m in out.sorted() where kept.last.map({ m - $0 >= 2 }) ?? true { kept.append(m) }
+    if kept.count > 1, let first = kept.first, let last = kept.last, first + 1440 - last < 2 { kept.removeLast() }
+    return kept.isEmpty ? nil : kept
+  }
+
+  public static func formatAt(_ m: Int) -> String { String(format: "%02d:%02d", m / 60, m % 60) }
 
   /// "10m", "2h", "1d", "30 min", "2 Std" -> seconds; at least two minutes.
   public static func parseEvery(_ s: String) -> TimeInterval? {
@@ -349,6 +425,7 @@ public struct ClawdHome: Sendable {
         t.prompt = b.trimmingCharacters(in: .whitespacesAndNewlines)
         let kv = Self.keyValues(h)
         if let e = kv["every"] { t.everyText = e; t.every = Self.parseEvery(e) }
+        if let a = kv["at"] { t.atText = a; t.at = Self.parseAt(a) }
         if let tl = kv["tools"] { t.tools = Self.splitTools(tl).filter(Self.isValidToolRule) }
         if let m = kv["model"] { t.model = m }
         if let p = kv["paused"] { t.paused = ["yes", "true", "1", "ja"].contains(p.lowercased()) }
@@ -374,12 +451,12 @@ public struct ClawdHome: Sendable {
     let file = Self.safeName(name)
     if file.isEmpty { return nil }
     var lines = ["---"]
-    for k in ["every", "tools", "model", "hours", "limit", "paused"] {
+    for k in ["every", "at", "tools", "model", "hours", "limit", "paused"] {
       if let v = head[k], !v.isEmpty { lines.append("\(k): \(v)") }
     }
     lines += ["---", prompt.trimmingCharacters(in: .whitespacesAndNewlines), ""]
     let u = tasks.appendingPathComponent("\(file).md")
-    Self.write(u, lines.joined(separator: "\n"))
+    Self.rewrite(u, lines.joined(separator: "\n"))
     return u
   }
 
@@ -399,7 +476,7 @@ public struct ClawdHome: Sendable {
         raw = "---\npaused: yes\n---\n" + raw
       }
     }
-    Self.write(t.path, raw)
+    Self.rewrite(t.path, raw)
   }
 
   /// Rewrites the task's `tools:` line with the granted rules added.
@@ -415,7 +492,7 @@ public struct ClawdHome: Sendable {
     } else {
       raw = "---\n\(line)\n---\n" + raw
     }
-    Self.write(t.path, raw)
+    Self.rewrite(t.path, raw)
     return true
   }
 }

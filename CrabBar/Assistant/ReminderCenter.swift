@@ -17,8 +17,8 @@ enum Notifier {
   }
 }
 
-/// Fires due reminders from ~/Clawd/reminders: a card with snooze chips, a chat entry, Clawd hops.
-/// Also asks a small model when the panel's "when" field is not understood.
+/// Fires due reminders from ~/Clawd/reminders: a card with snooze chips, a chat entry, Clawd hops. A repeating
+/// one leaves a file for its next time. Also asks a small model when the panel's "when" field is not understood.
 @MainActor
 @Observable
 final class ReminderCenter {
@@ -37,7 +37,7 @@ final class ReminderCenter {
       if r.at > now { break }
       if fired.contains(r.path.path) { continue }
       fired.insert(r.path.path)
-      let to = model.home.markDone(r)
+      let to = model.home.fire(r, now: now).done
       var text = r.text
       if now.timeIntervalSince(r.at) > 300 { text = T("chat.remindLate", text, Format.remindTime(r.at)) }
       model.chat.add("remind", text)

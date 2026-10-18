@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import ClawdCore
 
 /// Spawns processes with an argument array (never through a shell string), in their own process group so a
 /// hung `claude` can be killed together with its children. stdout and stderr go to temp files, as in the
@@ -47,6 +48,8 @@ final class Proc: @unchecked Sendable {
     env["LANG"] = env["LANG"] ?? "en_US.UTF-8"
     env.removeValue(forKey: "CLAUDECODE")
     env.removeValue(forKey: "CLAUDE_CODE_ENTRYPOINT")
+    // The claude processes the app starts must write where the app reads.
+    if let d = ClaudeConfig.custom { env["CLAUDE_CONFIG_DIR"] = d.path } else { env.removeValue(forKey: "CLAUDE_CONFIG_DIR") }
     for (k, v) in extra { env[k] = v }
     return env
   }
@@ -152,12 +155,20 @@ final class Proc: @unchecked Sendable {
     }
   }
 
-  /// PATH from the user's login shell, so tasks can reach npx, gh, uvx and friends.
-  static func loadLoginPath() async {
+  /// PATH and CLAUDE_CONFIG_DIR from the user's login shell: PATH so tasks can reach npx, gh, uvx and
+  /// friends, CLAUDE_CONFIG_DIR so the app reads the Claude Code folder the user's `claude` writes to.
+  /// Both come after a marker, in case the shell's startup files print something.
+  static func loadLoginEnv() async {
     let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-    let r = await run(shell, ["-l", "-c", "printf %s \"$PATH\""], timeout: 8)
-    let p = r.text.trimmingCharacters(in: .whitespacesAndNewlines)
-    if r.code == 0, !p.isEmpty, !p.contains("\n") { extraPath = p }
+    let r = await run(shell, ["-l", "-c", #"printf '\036%s\037%s' "$PATH" "$CLAUDE_CONFIG_DIR""#], timeout: 8)
+    guard r.code == 0, let mark = r.text.lastIndex(of: "\u{1E}") else { return }
+    let parts = r.text[r.text.index(after: mark)...].split(separator: "\u{1F}", omittingEmptySubsequences: false).map(String.init)
+    let p = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+    if !p.isEmpty, !p.contains("\n") { extraPath = p }
+    if parts.count > 1 {
+      let d = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+      ClaudeConfig.shellValue = d.isEmpty || d.contains("\n") ? nil : d
+    }
   }
 }
 

@@ -6,7 +6,7 @@
 
 Claude-Limits in der Mac-Menüleiste, bewacht von der Pixelkrabbe Clawd. Mit Widgets für Mac und iPhone.
 
-Nativer macOS-Nachbau von [clawd-usage-winwidget](https://github.com/Enhed/clawd-usage-winwidget) von Venger Sergey. Das Original ist ein PowerShell/WPF-Widget für Windows. Dieser Port ist eine Menüleisten-App mit WidgetKit-Widgets, komplett neu in Swift geschrieben und im Verhalten eng am Original in seiner Version 1.6.0.
+Nativer macOS-Nachbau von [clawd-usage-winwidget](https://github.com/Enhed/clawd-usage-winwidget) von Venger Sergey. Das Original ist ein PowerShell/WPF-Widget für Windows. Dieser Port ist eine Menüleisten-App mit WidgetKit-Widgets, komplett neu in Swift geschrieben und im Verhalten eng am Original in seiner Version 1.6.0, dazu einige Funktionen aus späteren Versionen.
 
 Die App zeigt die Claude-Plan-Limits wie `/usage`. Dazu kommt Clawd, die Pixelkrabbe vom Startbildschirm von Claude Code, auf einem Himmel mit echtem Sonnenstand und Wetter. Außerdem gibt es die laufenden Claude-Code-Sessions, den Status von status.claude.com und Clawds Assistenten: Chat, Erinnerungen, Listen, wiederkehrende Aufgaben und Tipps für einen aufgeräumten Mac.
 
@@ -30,9 +30,9 @@ Die App zeigt die Claude-Plan-Limits wie `/usage`. Dazu kommt Clawd, die Pixelkr
 - **iPhone:** eine eigene App mit denselben Widgets für den Home-Bildschirm, dazu Ring und Rechteck für den Sperrbildschirm. Die Daten kommen über die private CloudKit-Datenbank vom Mac.
 - **Clawds Panel:**
   - **Chat** mit Clawd (ein headless `claude -p` in seinem eigenen Ordner). Vorgeschlagene Skripte laufen erst nach Klick auf „Ausführen“.
-  - **Erinnerungen** mit Karte und Später-Knöpfen, wenn sie fällig sind.
+  - **Erinnerungen**, auch wiederkehrende (täglich, wöchentlich, monatlich, jährlich), mit Karte und Später-Knöpfen, wenn sie fällig sind.
   - **Listen.**
-  - **Wiederkehrende Aufgaben** im Hintergrund, die sich nur melden, wenn es etwas zu sagen gibt.
+  - **Wiederkehrende Aufgaben** im Hintergrund, in festen Abständen oder zu festen Uhrzeiten, die sich nur melden, wenn es etwas zu sagen gibt.
   - **Mac-Tipps:** wenig freier Speicher, Caches und anderer Datenmüll, neue Anmeldeobjekte, lange nicht geöffnete Apps, wartende Updates, RAM- und CPU-Fresser.
 - **Remote Control** (optional): hält Clawds eigene Claude-Code-Session am Laufen, damit du ihn vom Handy aus erreichst.
 - Deutsch und Englisch.
@@ -194,9 +194,9 @@ Das Panel öffnet sich über das Symbol in der Karte, über „Clawds Panel öff
 
 **Erinnerungen**
 
-- Text und Zeitpunkt eingeben, dann „Hinzufügen“. Das Zeitfeld versteht zum Beispiel `18:30`, `morgen 10`, `+20m`, `in einer Woche` und `19.10 14:00`, die Knöpfe darunter füllen es aus. Was das Feld nicht versteht, rechnet Clawd beim Speichern mit dem schnellen Modell (voreingestellt `haiku`) aus. Beginnt die Zeitangabe mit „jeden“, „täglich“ oder Ähnlichem, geht sie an den Chat, und Clawd legt eine wiederkehrende Aufgabe an.
-- „ANSTEHEND“ listet die geplanten Erinnerungen. Das ⋯-Menü bietet „Ändern“, „+1 Stunde“ und „Löschen“.
-- „WIEDERKEHREND“ listet die Aufgaben aus `~/Clawd/tasks` mit Intervall und Zustand. Das ⋯-Menü bietet „Jetzt ausführen“, „Pausieren“ oder „Fortsetzen“, „Öffnen“ (die Markdown-Datei) und „Löschen“. Ein Klick auf eine Aufgabe zeigt ihre letzten Berichte. Aufgaben warten, solange Session- oder Wochenwert bei oder über „Aufgaben pausieren ab“ liegt (voreingestellt 80 %).
+- Text und Zeitpunkt eingeben, dann „Hinzufügen“. Das Zeitfeld versteht zum Beispiel `18:30`, `morgen 10`, `+20m`, `in einer Woche` und `19.10 14:00`, die Knöpfe darunter füllen es aus. Was das Feld nicht versteht, rechnet Clawd beim Speichern mit dem schnellen Modell (voreingestellt `haiku`) aus. Beginnt die Zeitangabe mit „jeden“, „täglich“ oder Ähnlichem, geht sie an den Chat, und Clawd legt eine wiederkehrende Erinnerung an, oder eine wiederkehrende Aufgabe, wenn jedes Mal etwas zu tun ist.
+- „ANSTEHEND“ listet die geplanten Erinnerungen. ↻ markiert eine wiederkehrende und sagt, wie oft sie kommt. Das ⋯-Menü bietet „Ändern“, „+1 Stunde“ und „Löschen“. Eine wiederkehrende Erinnerung bleibt beim Ändern oder Verschieben wiederkehrend, ab ihrem neuen Zeitpunkt.
+- „WIEDERKEHREND“ listet die Aufgaben aus `~/Clawd/tasks` mit Intervall oder Uhrzeiten und Zustand. Das ⋯-Menü bietet „Jetzt ausführen“, „Pausieren“ oder „Fortsetzen“, „Öffnen“ (die Markdown-Datei) und „Löschen“. Ein Klick auf eine Aufgabe zeigt ihre letzten Berichte. Aufgaben warten, solange Session- oder Wochenwert bei oder über „Aufgaben pausieren ab“ liegt (voreingestellt 80 %).
 - „ZULETZT“ zeigt abgelaufene Erinnerungen, jeweils mit „nochmal“.
 - Ist eine Erinnerung fällig, erscheint unten rechts eine Karte mit Ton. „+15m“, „+1h“, „+3h“ und „morgen 9:00“ verschieben sie, „…“ öffnet diesen Reiter mit dem Text, „Erledigt“ schließt die Karte. Die Erinnerung steht außerdem im Chat.
 
@@ -225,6 +225,7 @@ Ist „Clawds Session mit Remote Control“ an, hält die App ein interaktives `
 - Textfelder werden mit Return gespeichert oder wenn du das Feld verlässt.
 - Bis auf „Bei Anmeldung starten“, das macOS selbst verwaltet, stehen alle Einstellungen in `~/Library/Application Support/CrabBar/config.json`. Die App prüft die Datei bei jedem Tick (voreingestellt alle 10 Sekunden, „Tick“ unter Daten → Intervalle) und übernimmt Änderungen im laufenden Betrieb. Schlüssel, die sie nicht kennt, bleiben beim Speichern erhalten.
 - Die Datei enthält die Schlüssel des Originals 1.6.0 ohne die nur für Windows und ohne `clawdSessionHidden` (Clawds Session läuft hier immer im Hintergrund), dazu einige für macOS: `floating`, `menuBarPercent`, `weatherUseLocation`, `weatherIPLookup`, `claudePath`, `iCloudSync` und `updateCheck`. Die meisten Schlüssel gibt es auch im Einstellungsfenster.
+- Ordner von Claude Code: CrabBar liest `~/.claude` (Sessions, Projekte, Transkripte, `settings.json` für den Update-Kanal) und `~/.claude.json` (ob Claude Code Clawds Ordner vertraut). Steht in der Umgebungsvariable `CLAUDE_CONFIG_DIR` ein absoluter Pfad (oder einer, der mit `~/` beginnt), liest die App stattdessen diesen Ordner und die `.claude.json` darin, wie Claude Code selbst. Jeder andere Wert gilt als nicht gesetzt. Eine App, die aus dem Finder oder bei der Anmeldung startet, sieht keine Shell-Variablen. Deshalb holt CrabBar `CLAUDE_CONFIG_DIR` beim Start zusammen mit `PATH` aus deiner Login-Shell und gibt die Variable an die `claude`-Prozesse weiter, die es startet. Mit zsh (Standard auf macOS) liest eine Login-Shell `~/.zprofile` und `~/.zshenv`, nicht `~/.zshrc`. Die Variable gehört also in eine dieser beiden Dateien, mit bash in `~/.bash_profile`. Nach einer Änderung CrabBar beenden und neu starten.
 
 ### iPhone
 
@@ -238,7 +239,7 @@ Ist „Clawds Session mit Remote Control“ an, hält die App ein interaktives `
 
 ### „Claude Code (claude) wurde nicht gefunden“
 
-Die App sucht `claude` nicht über den `PATH` der Shell, sondern an festen Orten: `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.claude/local`, `~/.npm-global/bin`, `~/.bun/bin`, `~/.local/share/claude/versions/` und die Kopie in der Claude-Desktop-App. Claude Code mit dem Befehl aus der Meldung installieren oder den Pfad unter Einstellungen → Daten → „Pfad zu claude“ eintragen und „Neu suchen“ klicken. Die Zeile unter dem Feld zeigt, welches `claude` die App nutzt und in welcher Version. Außerdem sucht die App einmal pro Stunde von selbst neu.
+Die App sucht `claude` nicht über den `PATH` der Shell, sondern an festen Orten: `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.claude/local` (und `local` in `CLAUDE_CONFIG_DIR`), `~/.npm-global/bin`, `~/.bun/bin`, `~/.local/share/claude/versions/` und die Kopie in der Claude-Desktop-App. Claude Code mit dem Befehl aus der Meldung installieren oder den Pfad unter Einstellungen → Daten → „Pfad zu claude“ eintragen und „Neu suchen“ klicken. Die Zeile unter dem Feld zeigt, welches `claude` die App nutzt und in welcher Version. Außerdem sucht die App einmal pro Stunde von selbst neu.
 
 ### „Diese Claude-Code-Version kennt /usage noch nicht“
 
@@ -250,7 +251,7 @@ Die App sucht `claude` nicht über den `PATH` der Shell, sondern an festen Orten
 
 ### Sessions werden nicht gezählt
 
-CrabBar liest die Liste laufender Sessions, die Claude Code unter `~/.claude/sessions/<pid>.json` führt. Eine Datei zählt nur, solange ihr Prozess lebt und zu der Zeit gestartet wurde, die in der Datei steht (±5 Sekunden). Nicht gezählt werden Prozesse, die CrabBar selbst startet (Chat, Aufgaben, `/usage`), und Clawds eigene Remote-Control-Session, solange sie ruht. Prüfen lässt sich das mit `ls ~/.claude/sessions`, während eine Session läuft. Bleibt der Ordner leer, schreibt dieses Claude Code die Liste nicht. Dann `claude update` ausführen. Außerdem lässt sich die Zeile „SESSIONS“ unter Einstellungen → Allgemein → Anzeige → „Sessions“ ausschalten.
+CrabBar liest die Liste laufender Sessions, die Claude Code unter `~/.claude/sessions/<pid>.json` führt (oder unter `sessions` in `CLAUDE_CONFIG_DIR`, siehe [Einstellungen und config.json](#einstellungen-und-configjson)). Eine Datei zählt nur, solange ihr Prozess lebt und zu der Zeit gestartet wurde, die in der Datei steht (±5 Sekunden). Nicht gezählt werden Prozesse, die CrabBar selbst startet (Chat, Aufgaben, `/usage`), und Clawds eigene Remote-Control-Session, solange sie ruht. Prüfen lässt sich das mit `ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/sessions`, während eine Session läuft. Bleibt der Ordner leer, schreibt dieses Claude Code die Liste nicht. Dann `claude update` ausführen. Außerdem lässt sich die Zeile „SESSIONS“ unter Einstellungen → Allgemein → Anzeige → „Sessions“ ausschalten.
 
 ### Widgets fehlen in der Galerie
 
@@ -324,13 +325,13 @@ Einstellungen → Daten → iPhone zeigt die Uhrzeit des letzten erfolgreichen U
 
 3. Clawds Ordner `~/Clawd` (oder der unter „Clawds Ordner“ eingestellte) enthält deine Erinnerungen, Listen und Aufgaben sowie `tips.md` und `chat-log.md`. Lösch ihn nur, wenn du das alles nicht mehr brauchst: `rm -rf ~/Clawd`.
 
-4. Claude Code legt die Transkripte des Panel-Chats und von Clawds Remote-Control-Session unter `~/.claude/projects/` ab, in einem Ordner, der nach dem Pfad von Clawds Ordner benannt ist:
+4. Claude Code legt die Transkripte des Panel-Chats und von Clawds Remote-Control-Session unter `~/.claude/projects/` ab (mit gesetztem `CLAUDE_CONFIG_DIR` unter `projects` dort), in einem Ordner, der nach dem Pfad von Clawds Ordner benannt ist:
 
    ```bash
-   rm -rf ~/.claude/projects/"$(printf %s "$HOME/Clawd" | sed 's/[^A-Za-z0-9]/-/g')"
+   rm -rf "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/"$(printf %s "$HOME/Clawd" | sed 's/[^A-Za-z0-9]/-/g')"
    ```
 
-   Hast du die Vertrauensfrage beantwortet, merkt sich Claude Code das in `~/.claude.json`. Der Eintrag stört nicht.
+   Hast du die Vertrauensfrage beantwortet, merkt sich Claude Code das in `~/.claude.json` (oder in `.claude.json` in `CLAUDE_CONFIG_DIR`). Der Eintrag stört nicht.
 
 5. iCloud: Der Container `iCloud.<BUNDLE_ID_PREFIX>.crabbar` bleibt im Entwicklerkonto, Container lassen sich nicht löschen. Sein Inhalt ist ein Datensatz (`current` in der Zone `CrabBar`) in deiner privaten Datenbank, dazu die Push-Subscription `clawd-snapshot` der iPhone-App. Zum Leeren zuerst den Upload stoppen (Schritt 2 oder `"iCloudSync": false`), denn die Mac-App legt die Zone beim nächsten Upload neu an. Dann in der CloudKit Console (icloud.developer.apple.com) den Container öffnen, die Umgebung wählen (Development für Builds aus Xcode), dich mit „Act as iCloud Account“ an der privaten Datenbank anmelden und die Zone `CrabBar` löschen. App-IDs und App Groups lassen sich unter Certificates, Identifiers & Profiles entfernen.
 
@@ -349,6 +350,8 @@ Einstellungen → Daten → iPhone zeigt die Uhrzeit des letzten erfolgreichen U
 | CrabBar-Releases | api.github.com, einmal pro Stunde |
 | Wetter | Open-Meteo, ersatzweise met.no; Ort aus den Einstellungen oder den macOS-Ortungsdiensten |
 | iPhone | Schnappschuss, den die Mac-App in die private CloudKit-Datenbank hochlädt |
+
+`~/.claude` steht für den Ordner aus `CLAUDE_CONFIG_DIR`, wenn die Variable gesetzt ist.
 
 Die App läuft ohne App-Sandbox, weil sie `claude` startet und `~/.claude` liest. Deshalb ist sie auch nicht für den App Store gedacht. Die Widget-Extension ist gesandboxt und bekommt ihre Daten aus einem Schnappschuss in einer gemeinsamen App Group.
 
@@ -387,7 +390,35 @@ Aus Xcode gebaute Apps nutzen die CloudKit-Umgebung „Development“. Kommt die
 
 ## Clawds Ordner
 
-`~/Clawd` (einstellbar) enthält `reminders/`, `lists/` und `tasks/` als Markdown-Dateien im selben Format wie beim Original 1.6.0. Panel-Chat, Hintergrundaufgaben und Clawds eigene Remote-Control-Session teilen sich den Ordner. Eine Erinnerung, die vom Handy aus angelegt wird, meldet sich also auf dem Mac.
+`~/Clawd` (einstellbar) enthält `reminders/`, `lists/` und `tasks/` als Markdown-Dateien im selben Format wie beim Original. Panel-Chat, Hintergrundaufgaben und Clawds eigene Remote-Control-Session teilen sich den Ordner. Eine Erinnerung, die vom Handy aus angelegt wird, meldet sich also auf dem Mac.
+
+Eine Erinnerung, zum Beispiel `reminders/2026-11/2026-11-16 10-00 Steuern zahlen.md`:
+
+```markdown
+---
+at: 2026-11-16T10:00
+repeat: monthly
+---
+Steuern zahlen
+```
+
+- `at`: Ortszeit. Fehlt die Zeile, kommt der Zeitpunkt aus dem Dateinamen.
+- `repeat` (optional): `daily`, `weekly`, `monthly` oder `yearly`. Meldet sich die Erinnerung, wandert ihre Datei nach `reminders/done`, und die App schreibt die Datei für das nächste Mal. War der Mac ein paar Termine lang aus, ist das nächste Mal der erste Termin nach jetzt. Eine monatliche Erinnerung am 29. bis 31. geht ab dem letzten Tag des kürzeren Monats weiter.
+
+Eine wiederkehrende Aufgabe, zum Beispiel `tasks/Mail.md`:
+
+```markdown
+---
+every: 10m
+tools: mcp__mail
+hours: 8-23
+---
+Check the inbox for mail that came since the last run. Tell me only about ...
+```
+
+- `every`: `10m`, `2h`, `1d` (mindestens zwei Minuten). Oder stattdessen `at: 09:00, 18:00`: zu diesen Uhrzeiten, jeweils einmal. Schlief der Mac zu einer davon oder war er aus, läuft die Aufgabe einmal, sobald er wieder an ist. Eine neue Aufgabe wartet auf ihre nächste Uhrzeit, statt für eine schon vergangene zu laufen. Stehen beide Schlüssel in der Datei, gilt `at`.
+- `hours` (optional, nur mit `every`): nur zwischen diesen Stunden, `22-7` geht über Mitternacht.
+- `tools`, `model`, `limit` und `paused: yes` sind optional, wie im Original.
 
 ## Unterschiede zum Original
 
@@ -397,7 +428,7 @@ Aus Xcode gebaute Apps nutzen die CloudKit-Umgebung „Development“. Kommt die
 - Der Reset-Zeitstempel wird mit seiner Zeitzone gelesen, und das neue Format „Oct 17 at 2:29pm“ wird verstanden.
 - Widgets zeigen einen Schnappschuss mit Standbild von Clawd. Animationen, Chat und Menüs gibt es nur in der App.
 - Zusätzlich eine iPhone-App mit Widgets, die ihre Daten über iCloud vom Mac bekommt.
-- Grundlage ist die Version 1.6.0 des Originals. Aus späteren Versionen fehlen unter anderem noch: Sessions anderer Rechner (`remoteSessions`), wiederkehrende Erinnerungen, Aufgaben zu festen Uhrzeiten (`at:`), strukturierte Antworten wiederkehrender Aufgaben, die Mondphase im Himmel-Tooltip, Themes und Skins, `CLAUDE_CONFIG_DIR` und der Claude-Code-Tab in den Einstellungen.
+- Grundlage ist die Version 1.6.0 des Originals, dazu aus späteren Versionen: wiederkehrende Erinnerungen (1.8.0), Aufgaben zu festen Uhrzeiten (`at:`, 1.8.3) und `CLAUDE_CONFIG_DIR` (1.9.3). Es fehlen unter anderem noch: Sessions anderer Rechner (`remoteSessions`), strukturierte Antworten wiederkehrender Aufgaben, die Mondphase im Himmel-Tooltip, Themes und Skins und der Claude-Code-Tab in den Einstellungen.
 
 ## Lizenz
 

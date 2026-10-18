@@ -2,10 +2,11 @@ import Foundation
 import Darwin
 import ClawdCore
 
-/// Claude Code keeps a registry of running sessions in ~/.claude/sessions/<pid>.json. Files outlive their
-/// processes, so a file only counts if its PID is alive and started when the file says (±5 s).
+/// Claude Code keeps a registry of running sessions in sessions/<pid>.json of its folder (~/.claude or
+/// CLAUDE_CONFIG_DIR). Files outlive their processes, so a file only counts if its PID is alive and started
+/// when the file says (±5 s).
 enum SessionsReader {
-  static var dir: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/sessions") }
+  static var dir: URL { ClaudeConfig.sessions }
 
   static func startTime(_ pid: pid_t) -> Date? {
     var info = kinfo_proc()

@@ -6,7 +6,7 @@
 
 Claude plan limits in your Mac menu bar, watched over by Clawd the pixel crab. With widgets for the Mac and the iPhone.
 
-A native macOS port of [clawd-usage-winwidget](https://github.com/Enhed/clawd-usage-winwidget) by Venger Sergey. The original is a PowerShell/WPF widget for Windows; this is a menu bar app with WidgetKit widgets, written from scratch in Swift and following the original's behaviour closely, as of its version 1.6.0.
+A native macOS port of [clawd-usage-winwidget](https://github.com/Enhed/clawd-usage-winwidget) by Venger Sergey. The original is a PowerShell/WPF widget for Windows; this is a menu bar app with WidgetKit widgets, written from scratch in Swift and following the original's behaviour closely, as of its version 1.6.0 plus a few features from later versions.
 
 It shows your Claude plan limits the way `/usage` does, with Clawd, the pixel crab from the Claude Code welcome screen, living on a sky that follows the real sunrise, sunset and weather. It also shows your running Claude Code sessions and the status of status.claude.com, and gives Clawd his assistant: a chat, reminders, lists, recurring tasks and tips for keeping the Mac tidy.
 
@@ -25,9 +25,9 @@ It shows your Claude plan limits the way `/usage` does, with Clawd, the pixel cr
 - **iPhone**: a companion app with the same Home Screen widgets plus a ring and a rectangle for the Lock Screen. The data comes from the Mac through your private CloudKit database.
 - **Clawd's panel**:
   - Chat with Clawd, a headless `claude -p` in his own folder. Scripts he proposes run only after you click Run.
-  - Reminders, with a card and snooze chips when they fire.
+  - Reminders, also repeating ones (daily, weekly, monthly, yearly), with a card and snooze chips when they fire.
   - Lists.
-  - Recurring tasks run in the background; they tell you only what is worth telling.
+  - Recurring tasks run in the background, every so often or at set times of day; they tell you only what is worth telling.
   - Mac tips: low disk space, caches and other junk, new login items, apps not opened for a long time, pending updates, memory and CPU hogs.
 - **Remote Control** (optional): keeps Clawd's own Claude Code session running so you can talk to him from your phone.
 - English and German.
@@ -188,9 +188,9 @@ The panel opens from the symbol in the card, from **Open Clawd's panel** in the 
 
 **Reminders**
 
-- Enter the text and the time, then **Add**. The time field understands for example `18:30`, `tomorrow 10`, `+20m`, `in a week` and `19.10 14:00`; the chips below fill it in. What the field doesn't understand, Clawd works out with the quick model (default `haiku`) when you save. A time that starts with "every", "daily" and the like goes to the chat, and Clawd sets it up as a recurring task.
-- **UPCOMING** lists the planned reminders. The ⋯ menu has **Change**, **+1 hour** and **Delete**.
-- **RECURRING** lists the tasks from `~/Clawd/tasks` with interval and state. The ⋯ menu has **Run now**, **Pause** or **Resume**, **Open** (the Markdown file) and **Delete**. A click on a task shows its last reports. Tasks wait while the session or week value is at or above **Tasks wait from** (default 80 %).
+- Enter the text and the time, then **Add**. The time field understands for example `18:30`, `tomorrow 10`, `+20m`, `in a week` and `19.10 14:00`; the chips below fill it in. What the field doesn't understand, Clawd works out with the quick model (default `haiku`) when you save. A time that starts with "every", "daily" and the like goes to the chat, and Clawd sets it up as a repeating reminder, or as a recurring task when something has to be done each time.
+- **UPCOMING** lists the planned reminders; ↻ marks a repeating one with how often it repeats. The ⋯ menu has **Change**, **+1 hour** and **Delete**. A repeating one stays repeating when changed or moved, from its new time.
+- **RECURRING** lists the tasks from `~/Clawd/tasks` with interval or times of day and state. The ⋯ menu has **Run now**, **Pause** or **Resume**, **Open** (the Markdown file) and **Delete**. A click on a task shows its last reports. Tasks wait while the session or week value is at or above **Tasks wait from** (default 80 %).
 - **RECENTLY** shows reminders that have fired, each with **again**.
 - When a reminder is due, a card appears at the bottom right with a sound. **+15m**, **+1h**, **+3h** and **tomorrow 9:00** put it off, **…** opens this tab with the text filled in, **Done** closes the card. The reminder also shows up in the chat.
 
@@ -219,6 +219,7 @@ With **Clawd's session with Remote Control** on, the app keeps an interactive `c
 - Text fields are saved on Return or when you leave the field.
 - Apart from **Launch at login**, which macOS keeps itself, all settings live in `~/Library/Application Support/CrabBar/config.json`. The app checks the file on every tick (every 10 seconds by default, **Tick** under Data → Intervals) and applies changes while it runs. Keys it doesn't know stay in the file when the app saves.
 - The file has the keys of the original 1.6.0, without the Windows-only ones and `clawdSessionHidden` (Clawd's session always runs in the background here), plus a few for macOS: `floating`, `menuBarPercent`, `weatherUseLocation`, `weatherIPLookup`, `claudePath`, `iCloudSync` and `updateCheck`. Most keys are also in the settings window.
+- Claude Code's folder: CrabBar reads `~/.claude` (sessions, projects, transcripts, `settings.json` for the update channel) and `~/.claude.json` (whether Claude Code trusts Clawd's folder). With the environment variable `CLAUDE_CONFIG_DIR` set to an absolute path (or one starting with `~/`), it reads that folder instead, and `.claude.json` inside it, as Claude Code does; any other value counts as unset. An app started from the Finder or at login doesn't see shell variables, so CrabBar takes `CLAUDE_CONFIG_DIR` from your login shell at start, together with `PATH`, and hands it on to the `claude` processes it starts. With zsh (the macOS default) a login shell reads `~/.zprofile` and `~/.zshenv`, not `~/.zshrc`, so export the variable in one of those; with bash, in `~/.bash_profile`. After changing it, quit and start CrabBar again.
 
 ### iPhone
 
@@ -232,7 +233,7 @@ With **Clawd's session with Remote Control** on, the app keeps an interactive `c
 
 ### "Claude Code (claude) was not found"
 
-The app doesn't search the shell's `PATH` for `claude` but fixed places: `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.claude/local`, `~/.npm-global/bin`, `~/.bun/bin`, `~/.local/share/claude/versions/` and the copy inside the Claude desktop app. Install Claude Code with the command from the message, or enter the path under Settings → Data → **Path to claude** and click **Search again**. The line below the field shows which `claude` the app uses and its version. The app also searches again by itself once an hour.
+The app doesn't search the shell's `PATH` for `claude` but fixed places: `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.claude/local` (and `local` in `CLAUDE_CONFIG_DIR`), `~/.npm-global/bin`, `~/.bun/bin`, `~/.local/share/claude/versions/` and the copy inside the Claude desktop app. Install Claude Code with the command from the message, or enter the path under Settings → Data → **Path to claude** and click **Search again**. The line below the field shows which `claude` the app uses and its version. The app also searches again by itself once an hour.
 
 ### "This Claude Code is too old for /usage"
 
@@ -244,7 +245,7 @@ The app doesn't search the shell's `PATH` for `claude` but fixed places: `~/.loc
 
 ### Sessions are not counted
 
-CrabBar reads the list of running sessions that Claude Code keeps in `~/.claude/sessions/<pid>.json`. A file counts only while its process is alive and was started at the time written in the file (±5 seconds). Processes CrabBar starts itself (chat, tasks, `/usage`) don't count, and neither does Clawd's own Remote Control session while it is idle. Check with `ls ~/.claude/sessions` while a session runs. If the folder stays empty, this Claude Code doesn't write the list; run `claude update`. The **SESSIONS** line can also be switched off under Settings → General → Display → **Sessions**.
+CrabBar reads the list of running sessions that Claude Code keeps in `~/.claude/sessions/<pid>.json` (or in `sessions` in `CLAUDE_CONFIG_DIR`, see [Settings and config.json](#settings-and-configjson)). A file counts only while its process is alive and was started at the time written in the file (±5 seconds). Processes CrabBar starts itself (chat, tasks, `/usage`) don't count, and neither does Clawd's own Remote Control session while it is idle. Check with `ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/sessions` while a session runs. If the folder stays empty, this Claude Code doesn't write the list; run `claude update`. The **SESSIONS** line can also be switched off under Settings → General → Display → **Sessions**.
 
 ### Widgets don't appear in the gallery
 
@@ -318,13 +319,13 @@ Settings → Data → iPhone shows the time of the last successful upload ("Last
 
 3. Clawd's folder `~/Clawd` (or the one set under **Clawd's folder**) holds your reminders, lists and tasks plus `tips.md` and `chat-log.md`. Delete it only if you don't need them any more: `rm -rf ~/Clawd`.
 
-4. Claude Code keeps the transcripts of the panel chat and of Clawd's Remote Control session in `~/.claude/projects/`, in a folder named after the path of Clawd's folder:
+4. Claude Code keeps the transcripts of the panel chat and of Clawd's Remote Control session in `~/.claude/projects/` (with `CLAUDE_CONFIG_DIR` set, in `projects` there), in a folder named after the path of Clawd's folder:
 
    ```bash
-   rm -rf ~/.claude/projects/"$(printf %s "$HOME/Clawd" | sed 's/[^A-Za-z0-9]/-/g')"
+   rm -rf "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/"$(printf %s "$HOME/Clawd" | sed 's/[^A-Za-z0-9]/-/g')"
    ```
 
-   If you answered the trust question, Claude Code remembers that in `~/.claude.json`. The entry does no harm.
+   If you answered the trust question, Claude Code remembers that in `~/.claude.json` (or in `.claude.json` in `CLAUDE_CONFIG_DIR`). The entry does no harm.
 
 5. iCloud: the container `iCloud.<BUNDLE_ID_PREFIX>.crabbar` stays in your developer account, as containers can't be deleted. Its content is one record (`current` in the zone `CrabBar`) in your private database, plus the push subscription `clawd-snapshot` of the iPhone app. To clear it, stop the upload first (step 2 or `"iCloudSync": false`), because the Mac app creates the zone again on its next upload. Then open the container in the CloudKit Console (icloud.developer.apple.com), pick the environment (Development for builds from Xcode), sign in to the private database with "Act as iCloud Account" and delete the zone `CrabBar`. App IDs and App Groups can be removed under Certificates, Identifiers & Profiles.
 
@@ -343,6 +344,8 @@ Settings → Data → iPhone shows the time of the last successful upload ("Last
 | CrabBar releases | api.github.com, once an hour |
 | Weather | Open-Meteo, met.no as a fallback; location from the settings or macOS Location Services |
 | iPhone | the snapshot the Mac app uploads to your private CloudKit database |
+
+`~/.claude` stands for the folder in `CLAUDE_CONFIG_DIR` when that is set.
 
 The app runs outside the App Sandbox because it starts `claude` and reads `~/.claude`. That is also why it is not meant for the App Store. The widget extension is sandboxed and gets its data from a snapshot in a shared App Group.
 
@@ -378,7 +381,35 @@ Apps built from Xcode use the CloudKit "Development" environment. An iPhone app 
 
 ## Clawd's folder
 
-`~/Clawd` (configurable) holds `reminders/`, `lists/` and `tasks/` as Markdown files in the same format as the original 1.6.0. The panel chat, the background tasks and Clawd's own Remote Control session share it, so a reminder made from the phone fires on the Mac.
+`~/Clawd` (configurable) holds `reminders/`, `lists/` and `tasks/` as Markdown files in the same format as the original. The panel chat, the background tasks and Clawd's own Remote Control session share it, so a reminder made from the phone fires on the Mac.
+
+A reminder, for example `reminders/2026-11/2026-11-16 10-00 Pay the taxes.md`:
+
+```markdown
+---
+at: 2026-11-16T10:00
+repeat: monthly
+---
+Pay the taxes
+```
+
+- `at`: local time. Without it, the time comes from the file name.
+- `repeat` (optional): `daily`, `weekly`, `monthly` or `yearly`. When the reminder fires, its file moves to `reminders/done` and the app writes the file for the next time. If the Mac was off for a few times, the next one is the first after now. A monthly one on the 29th to 31st goes on from the shorter month's last day.
+
+A recurring task, for example `tasks/Mail.md`:
+
+```markdown
+---
+every: 10m
+tools: mcp__mail
+hours: 8-23
+---
+Check the inbox for mail that came since the last run. Tell me only about ...
+```
+
+- `every`: `10m`, `2h`, `1d` (at least two minutes). Or instead `at: 09:00, 18:00`: these times of day, each once. If the Mac was asleep or off at one of them, the task runs once when it is on again. A new task waits for its next time instead of running for one already past. With both keys, `at` wins.
+- `hours` (optional, only with `every`): only between these hours, `22-7` spans midnight.
+- `tools`, `model`, `limit` and `paused: yes` are optional, as in the original.
 
 ## Differences from the original
 
@@ -388,7 +419,7 @@ Apps built from Xcode use the CloudKit "Development" environment. An iPhone app 
 - the reset stamp is read with its time zone, and the newer "Oct 17 at 2:29pm" format is understood
 - widgets show a snapshot with a still Clawd; animations, chat and menus live in the app
 - an extra iPhone app with widgets that gets its data from the Mac through iCloud
-- based on the original's version 1.6.0. Not in yet from later versions, among others: sessions from other machines (`remoteSessions`), repeating reminders, tasks at set times (`at:`), structured replies of recurring tasks, the moon phase in the sky's tooltip, themes and skins, `CLAUDE_CONFIG_DIR` and the Claude Code tab in the settings
+- based on the original's version 1.6.0, plus from later versions: repeating reminders (1.8.0), tasks at set times (`at:`, 1.8.3) and `CLAUDE_CONFIG_DIR` (1.9.3). Not in yet, among others: sessions from other machines (`remoteSessions`), structured replies of recurring tasks, the moon phase in the sky's tooltip, themes and skins and the Claude Code tab in the settings
 
 ## License
 

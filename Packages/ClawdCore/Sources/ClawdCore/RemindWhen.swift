@@ -138,9 +138,41 @@ public enum RemindWhen {
     return nil
   }
 
-  /// Words that mean it repeats: that becomes a recurring task instead.
+  /// Words that mean it repeats: the panel hands that to the chat, which makes a repeating reminder (or a
+  /// recurring task when something has to be done each time).
   public static func isRepeat(_ s: String) -> Bool {
     s.lowercased().range(of: #"^(every|each|daily|weekly|hourly|jede[nmrs]?|alle|täglich|wöchentlich|stündlich|immer)\b"#,
                          options: .regularExpression) != nil
   }
+}
+
+/// How a reminder repeats: a `repeat:` line in its file. When it fires, the app writes the file for the next time.
+public enum RemindRepeat: String, CaseIterable, Sendable {
+  case daily, weekly, monthly, yearly
+
+  /// The first word of a `repeat:` value, in any case; nil for anything else.
+  public static func word(_ s: String) -> RemindRepeat? {
+    let w = s.trimmingCharacters(in: .whitespaces).prefix { $0.isLetter || $0.isNumber || $0 == "_" }
+    return RemindRepeat(rawValue: w.lowercased())
+  }
+
+  /// The first time after `after`, stepping from `at` so the time of day stays (the Mac may have been off for
+  /// a few). A monthly one on the 29th-31st goes on from the shorter month's last day.
+  public func next(after: Date, from at: Date) -> Date? {
+    let cal = RemindWhen.calendar
+    for k in 1..<100_000 {
+      let d: Date?
+      switch self {
+      case .daily: d = cal.date(byAdding: .day, value: k, to: at)
+      case .weekly: d = cal.date(byAdding: .day, value: 7 * k, to: at)
+      case .monthly: d = cal.date(byAdding: .month, value: k, to: at)
+      case .yearly: d = cal.date(byAdding: .year, value: k, to: at)
+      }
+      if let d, d > after { return d }
+    }
+    return nil
+  }
+
+  /// "every month" for the Reminders tab and the chat's notes.
+  public var label: String { T("rem.\(rawValue)") }
 }

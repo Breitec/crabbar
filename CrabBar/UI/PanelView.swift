@@ -319,7 +319,7 @@ struct RemindersTab: View {
           HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
               Text(r.text).font(.system(size: 12)).foregroundStyle(Palette.textMain)
-              Text("\(Format.remindTime(r.at)) · \(T("rem.in", Format.span(until: r.at) ?? "0m"))")
+              Text("\(Format.remindTime(r.at))\(r.repeats.map { "  ↻ " + $0.label } ?? "") · \(T("rem.in", Format.span(until: r.at) ?? "0m"))")
                 .font(.system(size: 10)).foregroundStyle(Palette.textDim)
             }
             Spacer()
@@ -397,8 +397,7 @@ struct RemindersTab: View {
       return
     }
     let finish: (Date) -> Void = { at in
-      if let e = editing { try? FileManager.default.removeItem(at: e.path) }
-      model.home.newReminder(at: at, text: t)
+      if let e = editing { model.home.moveReminder(e, to: at, text: t) } else { model.home.newReminder(at: at, text: t) }
       editing = nil; text = ""; when = ""
       refresh += 1
     }
@@ -414,7 +413,7 @@ struct RemindersTab: View {
       if model.tasks.running == t.name { return T("task.running") }
       if model.tasks.queue.contains(t.name) { return T("task.queued") }
       if t.paused { return T("task.paused") }
-      if t.every == nil { return T("task.badEvery") }
+      if t.every == nil && t.at == nil { return T("task.badEvery") }
       if let w = model.tasks.budgetWait(t) { return T("task.budget", w) }
       if let e = st?.error, !e.isEmpty { return T("task.lastError", e) }
       if let l = st?.last { return T("task.last", Format.remindTime(l)) }
@@ -424,7 +423,7 @@ struct RemindersTab: View {
       HStack(alignment: .top) {
         VStack(alignment: .leading, spacing: 2) {
           Text(t.name).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.textMain)
-          Text("\(t.every.map(ClawdHome.formatEvery) ?? t.everyText) · \(status)")
+          Text("\(t.every == nil && t.at == nil ? (t.atText.isEmpty ? t.everyText : t.atText) : t.whenText) · \(status)")
             .font(.system(size: 10)).foregroundStyle(Palette.textDim).lineLimit(2)
         }
         Spacer()

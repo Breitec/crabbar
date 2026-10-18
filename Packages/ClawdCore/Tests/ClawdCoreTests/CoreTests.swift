@@ -211,7 +211,7 @@ func date(_ s: String, _ tz: String = "Europe/Berlin") -> Date {
     #expect(p.text == "Mach ich.")
     #expect(p.run == "du -sh ~/Library/Caches")
     #expect(p.actions.count == 3)
-    #expect(p.actions[0] == .remind(date("2026-10-19 10:00", TimeZone.current.identifier), "Kunden anrufen"))
+    #expect(p.actions[0] == .remind(date("2026-10-19 10:00", TimeZone.current.identifier), "Kunden anrufen", nil))
     if case .task(let name, let head, let prompt) = p.actions[2] {
       #expect(name == "Mail")
       #expect(head["tools"] == "mcp__mail")
@@ -386,5 +386,227 @@ func date(_ s: String, _ tz: String = "Europe/Berlin") -> Date {
     #expect(AppRelease.parse(Data(#"{"tag_name": "v2.0", "prerelease": true}"#.utf8)) == nil)
     #expect(AppRelease.parse(Data(#"{"message": "Not Found"}"#.utf8)) == nil)
     #expect(AppRelease.parse(Data("<html>".utf8)) == nil)
+  }
+}
+
+func local(_ s: String) -> Date { date(s, TimeZone.current.identifier) }
+
+@Suite struct ClaudeConfigTests {
+  let home = URL(fileURLWithPath: "/Users/test")
+
+  @Test func defaultFolder() {
+    #expect(ClaudeConfig.dir(nil, home: home).path == "/Users/test/.claude")
+    #expect(ClaudeConfig.dir("  ", home: home).path == "/Users/test/.claude")
+    #expect(ClaudeConfig.globalConfig(nil, home: home).path == "/Users/test/.claude.json")
+  }
+
+  @Test func movedFolder() {
+    #expect(ClaudeConfig.dir("/Volumes/data/claude/", home: home).path == "/Volumes/data/claude")
+    #expect(ClaudeConfig.dir("~/cc", home: home).path == "/Users/test/cc")
+    #expect(ClaudeConfig.dir("/Volumes/data/./claude/../cc", home: home).path == "/Volumes/data/cc")
+    // .claude.json moves into the folder along with it, as Claude Code does.
+    #expect(ClaudeConfig.globalConfig("~/cc", home: home).path == "/Users/test/cc/.claude.json")
+  }
+
+  @Test func relativeCountsAsUnset() {
+    // App and claude would resolve it against different working folders.
+    #expect(ClaudeConfig.custom("claude-config", home: home) == nil)
+    #expect(ClaudeConfig.dir("claude-config", home: home).path == "/Users/test/.claude")
+    #expect(ClaudeConfig.globalConfig("./cc", home: home).path == "/Users/test/.claude.json")
+    #expect(ClaudeConfig.custom("~other/cc", home: home) == nil)
+    #expect(ClaudeConfig.custom("~", home: home)?.path == "/Users/test")
+  }
+
+  @Test func projectKey() {
+    #expect(ClaudeConfig.projectKey("/Users/test/Clawd") == "-Users-test-Clawd")
+    #expect(ClaudeConfig.projectKey("/Users/test/My Stuff.x") == "-Users-test-My-Stuff-x")
+  }
+}
+
+@Suite struct RepeatingReminderTests {
+  func tmpHome() -> ClawdHome {
+    let h = ClawdHome(url: FileManager.default.temporaryDirectory.appendingPathComponent("clawd-test-\(UUID().uuidString)"))
+    h.ensure()
+    return h
+  }
+
+  @Test func words() {
+    #expect(RemindRepeat.word("Monthly") == .monthly)
+    #expect(RemindRepeat.word(" weekly  # mondays") == .weekly)
+    #expect(RemindRepeat.word("every") == nil)
+    #expect(RemindRepeat.word("") == nil)
+  }
+
+  @Test func nextTime() {
+    let at = local("2026-10-17 09:00")
+    #expect(RemindRepeat.daily.next(after: at, from: at) == local("2026-10-18 09:00"))
+    // The Mac was off for a few days: the series goes on from the next time after now.
+    #expect(RemindRepeat.daily.next(after: local("2026-10-20 12:00"), from: at) == local("2026-10-21 09:00"))
+    #expect(RemindRepeat.weekly.next(after: local("2026-10-20 12:00"), from: at) == local("2026-10-24 09:00"))
+    #expect(RemindRepeat.yearly.next(after: at, from: at) == local("2027-10-17 09:00"))
+    // The time of day stays across the end of summer time.
+    #expect(RemindRepeat.daily.next(after: local("2026-10-24 10:00"), from: local("2026-10-24 10:00")) == local("2026-10-25 10:00"))
+  }
+
+  @Test func monthEnds() {
+    let jan31 = local("2026-01-31 10:00")
+    #expect(RemindRepeat.monthly.next(after: jan31, from: jan31) == local("2026-02-28 10:00"))
+    #expect(RemindRepeat.monthly.next(after: local("2026-03-01 00:00"), from: jan31) == local("2026-03-31 10:00"))
+    let leap = local("2028-02-29 10:00")
+    #expect(RemindRepeat.yearly.next(after: leap, from: leap) == local("2029-02-28 10:00"))
+  }
+
+  @Test func fileRoundTrip() throws {
+    let h = tmpHome()
+    let at = local("2026-10-17 09:00")
+    let u = h.newReminder(at: at, text: "Visa-Saldo prüfen", repeats: .monthly)
+    #expect(try String(contentsOf: u, encoding: .utf8) == "---\nat: 2026-10-17T09:00\nrepeat: monthly\n---\nVisa-Saldo prüfen\n")
+    let r = try #require(h.activeReminders().first)
+    #expect(r.repeats == .monthly)
+
+    // Fired 40 days late: one file in done, the next one after now.
+    let fired = h.fire(r, now: local("2026-11-26 12:00"))
+    #expect(fired.done != nil)
+    let next = try #require(h.activeReminders().first)
+    #expect(h.activeReminders().count == 1)
+    #expect(next.at == local("2026-12-17 09:00"))
+    #expect(next.repeats == .monthly)
+    #expect(next.text == "Visa-Saldo prüfen")
+    #expect(h.doneReminders().count == 1)
+
+    // Moving keeps it repeating; a plain one fires without a successor.
+    let moved = h.moveReminder(next, to: local("2026-12-18 10:00"))
+    #expect(h.activeReminders().map(\.repeats) == [.monthly])
+    #expect(moved.lastPathComponent.hasPrefix("2026-12-18 10-00"))
+    let plain = h.newReminder(at: local("2026-12-01 10:00"), text: "einmal")
+    let p = try #require(h.activeReminders().first { $0.path.lastPathComponent == plain.lastPathComponent })
+    #expect(p.repeats == nil)
+    #expect(h.fire(p, now: local("2026-12-01 10:01")).next == nil)
+  }
+
+  @Test func handWrittenFile() throws {
+    let h = tmpHome()
+    let dir = h.reminders.appendingPathComponent("2026-11")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    try "---\nat: 2026-11-16T10:00\nrepeat: Weekly\n---\nPay the taxes\n"
+      .write(to: dir.appendingPathComponent("2026-11-16 10-00 Pay the taxes.md"), atomically: true, encoding: .utf8)
+    try "---\nat: 2026-11-17T10:00\nrepeat: sometimes\n---\nOdd\n"
+      .write(to: dir.appendingPathComponent("2026-11-17 10-00 Odd.md"), atomically: true, encoding: .utf8)
+    let r = h.activeReminders()
+    #expect(r.map(\.repeats) == [.weekly, nil])
+  }
+
+  @Test func remindBlock() {
+    let p = ReplyBlocks.parse("""
+    ```remind
+    2026-11-17T10:00 monthly | Check the Visa card balance
+    2026-10-19 10:00 | Call the client
+    2026-10-19 09:00 weekly | Team call
+    2026-10-20T10:00 monatlich | Konto prüfen
+    2026-10-21T10:00 Uhr | Zahnarzt
+    soon | Never
+    ```
+    """)
+    #expect(p.actions == [.remind(local("2026-11-17 10:00"), "Check the Visa card balance", .monthly),
+                          .remind(local("2026-10-19 10:00"), "Call the client", nil),
+                          .remind(local("2026-10-19 09:00"), "Team call", .weekly),
+                          .remind(local("2026-10-20 10:00"), "Konto prüfen", nil),
+                          .remind(local("2026-10-21 10:00"), "Zahnarzt", nil)])
+  }
+}
+
+@Suite struct TaskAtTests {
+  func task(_ at: String) -> ClawdHome.TaskFile {
+    var t = ClawdHome.TaskFile(name: "Morning", path: URL(fileURLWithPath: "/tmp/Morning.md"))
+    t.atText = at
+    t.at = ClawdHome.parseAt(at)
+    return t
+  }
+
+  @Test func parse() {
+    #expect(ClawdHome.parseAt("09:00, 18:00") == [540, 1080])
+    #expect(ClawdHome.parseAt("18:00 9.15; 9.15") == [555, 1080])
+    #expect(ClawdHome.parseAt("9") == [540])
+    #expect(ClawdHome.parseAt("9h30") == [570])
+    #expect(ClawdHome.parseAt("7h") == [420])
+    #expect(ClawdHome.parseAt("25:00") == nil)
+    #expect(ClawdHome.parseAt("9:75") == nil)
+    #expect(ClawdHome.parseAt("09:00, morgens") == nil)
+    #expect(ClawdHome.parseAt("") == nil)
+  }
+
+  @Test func atLeastTwoMinutesApart() {
+    #expect(ClawdHome.parseAt("09:00, 09:01, 09:02, 09:03, 09:04, 09:05") == [540, 542, 544])
+    // 00:01 is one minute after midnight, 23:59 one minute before it.
+    #expect(ClawdHome.parseAt("23:57, 23:58, 23:59, 00:00, 00:01") == [0, 1437])
+    #expect(ClawdHome.parseAt("23:59, 00:00") == [0])
+    #expect(ClawdHome.parseAt("00:00, 23:58") == [0, 1438])
+    #expect(ClawdHome.parseAt("12:00, 12:00") == [720])
+  }
+
+  @Test func slots() {
+    let t = task("09:00, 18:00")
+    #expect(t.slot(local("2026-10-17 08:00")) == local("2026-10-16 18:00"))
+    #expect(t.slot(local("2026-10-17 09:00")) == local("2026-10-17 09:00"))
+    #expect(t.slot(local("2026-10-17 17:59")) == local("2026-10-17 09:00"))
+    #expect(t.slot(local("2026-10-17 23:00")) == local("2026-10-17 18:00"))
+  }
+
+  @Test func due() {
+    let t = task("09:00, 18:00")
+    let made = local("2026-10-01 12:00")
+    // Ran at nine: not again before six.
+    #expect(!t.dueAt(lastRun: local("2026-10-17 09:00"), created: made, now: local("2026-10-17 10:00")))
+    #expect(t.dueAt(lastRun: local("2026-10-17 09:00"), created: made, now: local("2026-10-17 18:00")))
+    #expect(!t.dueAt(lastRun: local("2026-10-16 18:00"), created: made, now: local("2026-10-17 08:00")))
+    // Off since the day before yesterday: one catch-up run, then quiet until the next time.
+    #expect(t.dueAt(lastRun: local("2026-10-15 18:00"), created: made, now: local("2026-10-17 10:00")))
+    #expect(!t.dueAt(lastRun: local("2026-10-17 10:00"), created: made, now: local("2026-10-17 10:01")))
+    // A new task waits for its next time instead of going off for one already past.
+    #expect(!t.dueAt(lastRun: nil, created: local("2026-10-17 10:00"), now: local("2026-10-17 10:05")))
+    #expect(t.dueAt(lastRun: nil, created: local("2026-10-17 10:00"), now: local("2026-10-17 18:01")))
+  }
+
+  @Test func fileAndBlock() throws {
+    let h = ClawdHome(url: FileManager.default.temporaryDirectory.appendingPathComponent("clawd-test-\(UUID().uuidString)"))
+    h.ensure()
+    let u = try #require(h.newTask(name: "Morning", head: ["at": "09:00, 18:00", "tools": "mcp__mail"], prompt: "Sum up the mail."))
+    #expect(try String(contentsOf: u, encoding: .utf8) == "---\nat: 09:00, 18:00\ntools: mcp__mail\n---\nSum up the mail.\n")
+    let t = try #require(h.taskFiles().first)
+    #expect(t.at == [540, 1080])
+    #expect(t.every == nil)
+    // Other tests switch the language in parallel; the times are the same in every language.
+    #expect(t.whenText.contains("09:00, 18:00"))
+
+    // Rewriting the file (pause, allow tools) keeps its creation date: the times count from when it appeared.
+    let past = local("2026-10-01 12:00")
+    try FileManager.default.setAttributes([.creationDate: past], ofItemAtPath: u.path)
+    h.setTaskPaused(t, true)
+    #expect(h.taskFiles().first?.created == past)
+    #expect(h.taskFiles().first?.paused == true)
+
+    let p = ReplyBlocks.parse("""
+    ```task
+    name: Morning
+    at: 8:30
+    ---
+    Sum up the night.
+    ```
+
+    ```task
+    name: Never
+    at: soon
+    ---
+    Nothing.
+    ```
+    """)
+    #expect(p.actions.count == 2)
+    if case .task(let name, let head, _) = p.actions[0] {
+      #expect(name == "Morning")
+      #expect(head["at"] == "8:30")
+    } else {
+      Issue.record("no task")
+    }
+    #expect(p.actions[1] == .taskBad(name: "Never"))
   }
 }

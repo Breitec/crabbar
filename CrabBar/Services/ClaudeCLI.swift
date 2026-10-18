@@ -1,4 +1,5 @@
 import Foundation
+import ClawdCore
 
 /// Finds the `claude` binary. Several installs can live side by side (native installer, Homebrew, npm,
 /// the one bundled with the Claude desktop app); the newest version wins unless config names one.
@@ -24,6 +25,7 @@ enum ClaudeCLI {
     let home = fm.homeDirectoryForCurrentUser.path
     var out = ["\(home)/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude",
                "\(home)/.claude/local/claude", "\(home)/.npm-global/bin/claude", "\(home)/.bun/bin/claude"]
+    if let d = ClaudeConfig.custom { out.append(d.appendingPathComponent("local/claude").path) }
     let versions = "\(home)/.local/share/claude/versions"
     for v in (try? fm.contentsOfDirectory(atPath: versions)) ?? [] { out.append("\(versions)/\(v)") }
     let bundled = "\(home)/Library/Application Support/Claude/claude-code"
@@ -66,10 +68,9 @@ enum ClaudeCLI {
     return best
   }
 
-  /// `autoUpdatesChannel` from ~/.claude/settings.json: latest or stable.
+  /// `autoUpdatesChannel` from settings.json in Claude Code's folder: latest or stable.
   static var updateChannel: String {
-    let u = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/settings.json")
-    if let d = try? Data(contentsOf: u), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+    if let d = try? Data(contentsOf: ClaudeConfig.settings), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
        let c = j["autoUpdatesChannel"] as? String, ["latest", "stable"].contains(c) { return c }
     return "latest"
   }

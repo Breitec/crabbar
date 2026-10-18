@@ -2,7 +2,7 @@ import Foundation
 
 #if os(macOS)
 
-/// Tokens of every assistant reply in ~/.claude/projects over the last week, weighted by model price,
+/// Tokens of every assistant reply in Claude Code's projects folder over the last week, weighted by model price,
 /// by project and hour. Reads only what was appended since the last scan.
 public final class ProjectScanner {
   public struct Result: Sendable {
@@ -28,7 +28,7 @@ public final class ProjectScanner {
                                           ("cache_read_input_tokens", 0.1), ("output_tokens", 5)]
 
   var cache: [String: FileState] = [:]
-  let root: URL
+  public let root: URL
   let cacheURL: URL?
 
   public init(root: URL, cacheURL: URL?) {

@@ -4,7 +4,7 @@ import Foundation
 
 /// Fenced blocks in Clawd's replies that the app acts on; the rest is the text shown in the chat.
 public enum ReplyAction: Equatable, Sendable {
-  case remind(Date, String)
+  case remind(Date, String, RemindRepeat?)
   case remindCancel(String)
   case list(kind: String, list: String, item: String)
   case task(name: String, head: [String: String], prompt: String)
@@ -34,10 +34,16 @@ public enum ReplyBlocks {
       case "run":
         if !body.isEmpty { run = body }
       case "remind":
+        // "2026-11-17T10:00 monthly | text": a repeat word may follow the time. Another word ("Uhr",
+        // "monatlich") leaves a one-time reminder, as in the original.
         for line in lines {
           let parts = line.split(separator: "|", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-          guard parts.count == 2, let at = Format.parseISO(parts[0]), !parts[1].isEmpty else { continue }
-          actions.append(.remind(at, parts[1]))
+          guard parts.count == 2, !parts[1].isEmpty else { continue }
+          let words = parts[0].split(whereSeparator: \.isWhitespace).map(String.init)
+          // The time is one word or two ("2026-10-19 10:00").
+          guard let n = [2, 1].first(where: { $0 <= words.count && Format.parseISO(words[..<$0].joined(separator: " ")) != nil }),
+                let at = Format.parseISO(words[..<n].joined(separator: " ")) else { continue }
+          actions.append(.remind(at, parts[1], words.count > n ? RemindRepeat.word(words[n]) : nil))
         }
       case "remind-cancel":
         for line in lines where !line.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -50,7 +56,8 @@ public enum ReplyBlocks {
         let prompt = body.components(separatedBy: "\n")[(i + 1)...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         let head = ClawdHome.keyValues(headLines)
         let name = head["name"] ?? ""
-        if name.isEmpty || ClawdHome.parseEvery(head["every"] ?? "") == nil || prompt.isEmpty {
+        let when = ClawdHome.parseEvery(head["every"] ?? "") != nil || ClawdHome.parseAt(head["at"] ?? "") != nil
+        if name.isEmpty || !when || prompt.isEmpty {
           actions.append(.taskBad(name: name))
         } else {
           actions.append(.task(name: name, head: head, prompt: prompt))

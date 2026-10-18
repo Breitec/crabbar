@@ -97,7 +97,13 @@ enum Prompts {
 
   ```remind
   2026-10-19T10:00 | Call the client
+  2026-11-17T10:00 monthly | Check the Visa card balance
   ```
+
+  A word after the time makes it repeat: `daily`, `weekly`, `monthly` or `yearly` - one
+  line, the app keeps it going ("every 17th", "each Monday", "every year on her
+  birthday"). That is a plain reminder; a recurring task (below) is for when you have to
+  do something each time, like checking the mail.
 
   Work out relative times ("in 20 minutes", "on Monday", "in a month") from the time in
   <context>. If only a day is given, use 10:00. Something long-term ("pay the taxes in a
@@ -135,6 +141,9 @@ enum Prompts {
   ```
 
   `every` - 10m, 2h, 1d (not less than a few minutes: each run uses the user's limits).
+  Or, instead of `every`, `at` - times of day, "09:00" or "09:00, 18:00": for what can
+  wait till a set hour (a morning summary, an evening check) - one run a day instead of
+  dozens; a time missed while the Mac was asleep or off runs once when it is on again.
   `tools` - what the task may use besides reading files and read-only shell commands,
   space-separated. A task runs in the background and can't ask for permission, so list
   everything it needs, as narrowly as it will do:
@@ -143,10 +152,10 @@ enum Prompts {
     Bash(gh issue list:*) Bash(gh pr list:*) Bash(gh run list:*) for read-only GitHub checks;
   - a site as WebFetch(domain:example.com).
   If a run is refused something anyway, the app offers the user to allow it. `hours` -
-  optional, only between these hours. `limit` - optional, wait while the plan's usage is
-  at this percent or more (the default is the app's tasksMaxPercent, 80). `model` -
-  optional, the default is a small fast one. To remove tasks, a block `task-remove` with
-  their names, one per line. Confirm in a few words.
+  optional, only between these hours (for `every`). `limit` - optional, wait while the
+  plan's usage is at this percent or more (the default is the app's tasksMaxPercent, 80).
+  `model` - optional, the default is a small fast one. To remove tasks, a block
+  `task-remove` with their names, one per line. Confirm in a few words.
   """
 
   static let tasksText = """
@@ -174,9 +183,10 @@ enum Prompts {
   can't ask for more. If something you need is refused, say in one line what you could not
   do - the app offers the user to allow it - and don't try other ways around it. You cannot
   change files yourself. The same blocks as in the chat work here: `remind` (one line
-  "yyyy-MM-ddTHH:mm | text") and `list-add` ("<list> | <item>"). A `run` block (a zsh
-  script) is not run by itself: it waits in the chat for the user's click - propose one
-  only if the task asks for it.
+  "yyyy-MM-ddTHH:mm | text", a repeat word - daily, weekly, monthly, yearly - may follow
+  the time) and `list-add` ("<list> | <item>"). A `run` block (a zsh script) is not run
+  by itself: it waits in the chat for the user's click - propose one only if the task asks
+  for it.
   """
 
   static let sessionText = """
@@ -213,6 +223,10 @@ enum Prompts {
     ---
     Pay the taxes
 
+    To make it repeat, add a line "repeat: daily" (or weekly, monthly, yearly) under "at" -
+    one file, the app makes the next one each time it goes off. "Every 17th", "each
+    Monday" is that, not a file per date.
+
     Local time of this Mac; for relative times ("in 20 minutes", "in a month") get the
     current time first (date). If only a day is given, use 10:00. To list reminders, look at
     the files; to cancel one, delete its file; to move one, change "at" and the file name.
@@ -242,12 +256,15 @@ enum Prompts {
     ---
     Check the inbox for mail that came since the last run. Tell me only about ...
 
-    every - 10m, 2h, 1d; tools - what it may use besides reading files, space-separated: an
-    MCP server as mcp__<server>, a command as a rule by its first words like
-    Bash(gh issue list:*), a site as WebFetch(domain:github.com) - it runs in the background
-    and can't ask, so list everything it needs; hours, model, limit (wait while the plan's
-    usage is at this percent or more) and "paused: yes" are optional. Write the text as an
-    instruction to yourself. To stop one, delete its file or pause it.
+    every - 10m, 2h, 1d, or instead "at: 09:00, 18:00" - at these times of day, for what
+    can wait till a set hour (one run a day instead of dozens; a time missed while the Mac
+    was asleep or off runs once when it is on again); tools - what it may use besides
+    reading files, space-separated: an MCP server as mcp__<server>, a command as a rule by
+    its first words like Bash(gh issue list:*), a site as WebFetch(domain:github.com) - it
+    runs in the background and can't ask, so list everything it needs; hours, model, limit
+    (wait while the plan's usage is at this percent or more) and "paused: yes" are
+    optional. Write the text as an instruction to yourself. To stop one, delete its file or
+    pause it.
 
   The notification shows up on the Mac, not on the phone: if the user is away and needs it
   on the phone, say so.

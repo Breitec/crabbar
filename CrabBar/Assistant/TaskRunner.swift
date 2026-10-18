@@ -1,8 +1,9 @@
 import Foundation
 import ClawdCore
 
-/// Recurring tasks from ~/Clawd/tasks: one at a time as a headless `claude -p`. The reply NOTHING stays
-/// silent; anything else lands in the chat with a notification. Tasks wait while usage is high.
+/// Recurring tasks from ~/Clawd/tasks, every so often (`every`) or at set times of day (`at`): one at a time
+/// as a headless `claude -p`. The reply NOTHING stays silent; anything else lands in the chat with a
+/// notification. Tasks wait while usage is high.
 /// Tools beyond reading need the user's approval once per task: task files can be written by Claude
 /// (chat blocks, the phone session), so a task never gains tools on its own.
 @MainActor
@@ -111,9 +112,14 @@ final class TaskRunner {
     }
     let now = Date()
     for t in model.home.taskFiles() {
-      guard !t.paused, !t.prompt.isEmpty, let every = t.every, t.inHours(now), budgetWait(t) == nil else { continue }
-      let last = state[t.name]?.last ?? .distantPast
-      guard now.timeIntervalSince(last) >= every else { continue }
+      guard !t.paused, !t.prompt.isEmpty, t.at != nil || t.every != nil, budgetWait(t) == nil else { continue }
+      let last = state[t.name]?.last
+      if t.at != nil {
+        // Once per time of day; a time missed while the Mac slept or was off - once, when it is on again.
+        guard t.dueAt(lastRun: last, created: t.created, now: now) else { continue }
+      } else {
+        guard t.inHours(now), let every = t.every, now.timeIntervalSince(last ?? .distantPast) >= every else { continue }
+      }
       if !unapproved(t).isEmpty { askApproval(t); continue }
       start(t)
       if running != nil { return }
@@ -123,7 +129,8 @@ final class TaskRunner {
   func start(_ t: ClawdHome.TaskFile, model override: String? = nil, retry: Bool = false) {
     guard let model, let bin = model.claude, running == nil, !t.prompt.isEmpty, unapproved(t).isEmpty else { return }
     let prev = state[t.name]
-    var head = ["<task name=\"\(t.name)\" every=\"\(t.everyText)\">"]
+    let when = t.at != nil ? "at=\"\(t.atText)\"" : "every=\"\(t.everyText)\""
+    var head = ["<task name=\"\(t.name)\" \(when)>"]
     if let last = prev?.last {
       let f = DateFormatter()
       f.locale = Locale(identifier: "en_US_POSIX")

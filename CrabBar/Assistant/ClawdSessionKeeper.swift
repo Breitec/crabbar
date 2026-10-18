@@ -31,14 +31,9 @@ final class ClawdSessionKeeper {
     return n.isEmpty ? "crabbar" : n
   }
 
-  var projectKey: String {
-    (model?.home.url.path ?? "").replacingOccurrences(of: "[^A-Za-z0-9]", with: "-", options: .regularExpression)
-  }
-
   var trusted: Bool {
     guard let home = model?.home.url.path else { return false }
-    let u = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json")
-    guard let d = try? Data(contentsOf: u), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+    guard let d = try? Data(contentsOf: ClaudeConfig.globalConfig), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
           let projects = j["projects"] as? [String: Any], let p = projects[home] as? [String: Any] else { return false }
     return (p["hasTrustDialogAccepted"] as? Bool) == true
   }
@@ -88,15 +83,16 @@ final class ClawdSessionKeeper {
     guard let model, let bin = model.claude else { return }
     stop()
     var args = ["-n", name, "--remote-control", name, "--append-system-prompt-file", Prompts.session.path]
-    if let id = sessionId {
-      let t = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects/\(projectKey)/\(id).jsonl")
-      if FileManager.default.fileExists(atPath: t.path) { args += ["--resume", id] }
+    if let id = sessionId, FileManager.default.fileExists(atPath: ClaudeConfig.transcript(cwd: model.home.url.path, sessionId: id).path) {
+      args += ["--resume", id]
     }
     startedAt = Date()
     if trusted {
       pty = try? PtyProc.spawn(bin.path, args, cwd: model.home.url.path)
     } else {
-      let quoted = ([bin.path] + args).map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
+      let q: (String) -> String = { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+      var quoted = ([bin.path] + args).map(q).joined(separator: " ")
+      if let d = ClaudeConfig.custom { quoted = "CLAUDE_CONFIG_DIR=\(q(d.path)) " + quoted }
       Terminal.run(command: quoted, title: "Clawd", cwd: model.home.url.path)
     }
   }

@@ -46,6 +46,8 @@ final class AppModel {
   var projects: ProjectScanner.Result?
   @ObservationIgnored var projTry = Date.distantPast
   @ObservationIgnored var projRunning = false
+  /// PATH and CLAUDE_CONFIG_DIR from the login shell are in: until then the projects folder is not known.
+  @ObservationIgnored var loginEnvLoaded = false
   @ObservationIgnored var scanner: ProjectScanner?
 
   var now = Date()
@@ -115,7 +117,10 @@ final class AppModel {
       return
     }
     Task {
-      await Proc.loadLoginPath()
+      // CLAUDE_CONFIG_DIR comes with the login shell's PATH: watch the sessions folder only after that.
+      await Proc.loadLoginEnv()
+      loginEnvLoaded = true
+      watchSessions()
       await locateClaude()
       tick()
     }
@@ -126,7 +131,6 @@ final class AppModel {
         self?.tick()
       }
     }
-    watchSessions()
   }
 
   func locateClaude() async {
@@ -378,10 +382,12 @@ final class AppModel {
   }
 
   func scanProjects() {
+    // A scan of the wrong folder would also drop the token cache of the right one; the tick catches up.
+    guard loginEnvLoaded else { return }
     projTry = Date()
     projRunning = true
-    let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
-    if scanner == nil { scanner = ProjectScanner(root: root, cacheURL: AppPaths.tokens) }
+    let root = ClaudeConfig.projects
+    if scanner?.root != root { scanner = ProjectScanner(root: root, cacheURL: AppPaths.tokens) }
     let s = scanner!
     Task.detached(priority: .utility) {
       let r = s.scan()
