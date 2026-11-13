@@ -4,6 +4,8 @@
 
 **English** · [Deutsch](README.de.md)
 
+> **No longer maintained.** This repository is archived: there will be no updates, releases or answers to issues. The code stays here under the MIT license; fork it if you want to carry it on. The last release is [1.1.1](https://github.com/Breitec/crabbar/releases/tag/v1.1.1).
+
 Claude plan limits in your Mac menu bar, watched over by Clawd the pixel crab. With widgets for the Mac and the iPhone.
 
 A native macOS port of [clawd-usage-winwidget](https://github.com/Enhed/clawd-usage-winwidget) by Venger Sergey. The original is a PowerShell/WPF widget for Windows; this is a menu bar app with WidgetKit widgets, written from scratch in Swift and following the original's behaviour closely, as of its version 1.6.0 plus a few features from later versions.

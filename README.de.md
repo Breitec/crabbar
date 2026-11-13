@@ -4,6 +4,8 @@
 
 [English](README.md) · **Deutsch**
 
+> **Nicht mehr gepflegt.** Dieses Repository ist archiviert: Es gibt keine Updates, Releases oder Antworten auf Issues mehr. Der Code bleibt unter der MIT-Lizenz hier, wer ihn weiterführen will, kann ihn forken. Das letzte Release ist [1.1.1](https://github.com/Breitec/crabbar/releases/tag/v1.1.1).
+
 Claude-Limits in der Mac-Menüleiste, bewacht von der Pixelkrabbe Clawd. Mit Widgets für Mac und iPhone.
 
 Nativer macOS-Nachbau von [clawd-usage-winwidget](https://github.com/Enhed/clawd-usage-winwidget) von Venger Sergey. Das Original ist ein PowerShell/WPF-Widget für Windows. Dieser Port ist eine Menüleisten-App mit WidgetKit-Widgets, komplett neu in Swift geschrieben und im Verhalten eng am Original in seiner Version 1.6.0, dazu einige Funktionen aus späteren Versionen.
